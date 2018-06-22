@@ -51,13 +51,15 @@ public class NexmarkQuery8 {
 
 		private static final TypeInformation<NewPersonEvent0[]> FLINK_INTERNAL_TYPE = TypeInformation.of(new TypeHint<NewPersonEvent0[]>() {});
 
-		private final long bytesToRead;
+		//private final long bytesToRead;
 
-		private long bytesReadSoFar;
+//		private long bytesReadSoFar;
 
-		public PersonDeserializationSchema(long bytesToRead) {
-			this.bytesToRead = (bytesToRead / PERSON_RECORD_SIZE) * PERSON_RECORD_SIZE;
-			this.bytesReadSoFar = 0;
+		private long lastBacklog = Long.MAX_VALUE;
+
+		public PersonDeserializationSchema() {
+			//this.bytesToRead = (bytesToRead / PERSON_RECORD_SIZE) * PERSON_RECORD_SIZE;
+//			this.bytesReadSoFar = 0;
 		}
 
 		@Override
@@ -71,6 +73,7 @@ public class NexmarkQuery8 {
 			ByteBuffer wrapper = ByteBuffer.wrap(buffer);
 			int checksum = wrapper.getInt();
 			int itemsInThisBuffer = wrapper.getInt();
+			long newBacklog = wrapper.getLong();
 
 			Preconditions.checkArgument(checksum == 0x30011991);
 
@@ -92,14 +95,15 @@ public class NexmarkQuery8 {
 				helper.setLength(0);
 			}
 
-			bytesReadSoFar += buffer.length;
+//			bytesReadSoFar += buffer.length;
+			lastBacklog = newBacklog;
 
 			return data;
 		}
 
 		@Override
 		public boolean isEndOfStream(NewPersonEvent0[] nextElement) {
-			return bytesReadSoFar >= bytesToRead;
+			return lastBacklog <= 0;
 		}
 
 		@Override
@@ -114,13 +118,15 @@ public class NexmarkQuery8 {
 
 		private static final TypeInformation<AuctionEvent0[]> FLINK_INTERNAL_TYPE = TypeInformation.of(new TypeHint<AuctionEvent0[]>() {});
 
-		private final long bytesToRead;
+//		private final long bytesToRead;
 
-		private long bytesReadSoFar;
+//		private long bytesReadSoFar;
 
-		public AuctionsDeserializationSchema(long bytesToRead) {
-			this.bytesToRead = (bytesToRead / AUCTION_RECORD_SIZE) * AUCTION_RECORD_SIZE;
-			this.bytesReadSoFar = 0;
+		private long lastBacklog = Long.MAX_VALUE;
+
+		public AuctionsDeserializationSchema() {
+//			this.bytesToRead = (bytesToRead / AUCTION_RECORD_SIZE) * AUCTION_RECORD_SIZE;
+//			this.bytesReadSoFar = 0;
 		}
 
 		@Override
@@ -134,6 +140,7 @@ public class NexmarkQuery8 {
 			ByteBuffer wrapper = ByteBuffer.wrap(buffer);
 			int checksum = wrapper.getInt();
 			int itemsInThisBuffer = wrapper.getInt();
+			long newBacklog = wrapper.getLong();
 
 			Preconditions.checkArgument(checksum == 0x30061992);
 
@@ -151,14 +158,15 @@ public class NexmarkQuery8 {
 				data[i] = new AuctionEvent0(ts, id, itemId, pid, (double) price, c, start, end);
 			}
 
-			bytesReadSoFar += buffer.length;
+//			bytesReadSoFar += buffer.length;
+			lastBacklog = newBacklog;
 
 			return data;
 		}
 
 		@Override
 		public boolean isEndOfStream(AuctionEvent0[] nextElement) {
-			return bytesReadSoFar >= bytesToRead;
+			return lastBacklog <= 0;
 		}
 
 		@Override
@@ -306,10 +314,10 @@ public class NexmarkQuery8 {
 		env.getConfig().registerTypeWithKryoSerializer(NewPersonEvent0.class, NewPersonEvent0.NewPersonEventKryoSerializer.class);
 
 		FlinkKafkaConsumer011<NewPersonEvent0[]> kafkaSourcePersons =
-				new FlinkKafkaConsumer011<>(PERSONS_TOPIC, new PersonDeserializationSchema(personStreamSizeBytes * ONE_GIGABYTE), baseCfg);
+				new FlinkKafkaConsumer011<>(PERSONS_TOPIC, new PersonDeserializationSchema(), baseCfg);
 
 		FlinkKafkaConsumer011<AuctionEvent0[]> kafkaSourceAuctions =
-				new FlinkKafkaConsumer011<>(AUCTIONS_TOPIC, new AuctionsDeserializationSchema(auctionStreamSizeBytes * ONE_GIGABYTE), baseCfg);
+				new FlinkKafkaConsumer011<>(AUCTIONS_TOPIC, new AuctionsDeserializationSchema(), baseCfg);
 
 		kafkaSourceAuctions.setCommitOffsetsOnCheckpoints(true);
 		kafkaSourceAuctions.setStartFromEarliest();
@@ -391,7 +399,7 @@ public class NexmarkQuery8 {
 		env.getConfig().registerTypeWithKryoSerializer(NewPersonEvent0.class, NewPersonEvent0.NewPersonEventKryoSerializer.class);
 
 		FlinkKafkaConsumer011<NewPersonEvent0[]> kafkaSource =
-				new FlinkKafkaConsumer011<>(PERSONS_TOPIC, new PersonDeserializationSchema(ONE_GIGABYTE * personStreamSizeBytes), baseCfg);
+				new FlinkKafkaConsumer011<>(PERSONS_TOPIC, new PersonDeserializationSchema(), baseCfg);
 
 		kafkaSource.setStartFromEarliest();
 		kafkaSource.setCommitOffsetsOnCheckpoints(true);
