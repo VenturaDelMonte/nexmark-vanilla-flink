@@ -277,7 +277,7 @@ public class NexmarkQuery8 {
 		final int sourceParallelism = params.getInt("sourceParallelism", 1);
 		final int windowParallelism = params.getInt("windowParallelism", 1);
 		final int windowDuration = params.getInt("windowDuration", 1);
-		final int sinkParallelism = params.getInt("sinkParallelism", windowDuration);
+		final int sinkParallelism = params.getInt("sinkParallelism", windowParallelism);
 
 		final int checkpointingInterval = params.getInt("checkpointingInterval", 0);
 		final long checkpointingTimeout = params.getLong("checkpointingTimeout", CheckpointConfig.DEFAULT_TIMEOUT);
@@ -286,10 +286,6 @@ public class NexmarkQuery8 {
 		final int minPauseBetweenCheckpoints = params.getInt("minPauseBetweenCheckpoints", checkpointingInterval);
 		final int parallelism = params.getInt("parallelism", 1);
 		final int maxParallelism = params.getInt("maxParallelism", 1024);
-		final int numOfVirtualNodes = params.getInt("numOfVirtualNodes", 4);
-
-		final int personStreamSizeBytes = params.getInt("personStreamSizeGb", 1);
-		final int auctionStreamSizeBytes = params.getInt("auctionStreamSizeGb", 1);
 
 		final String kafkaServers = params.get("kafkaServers", "localhost:9092");
 
