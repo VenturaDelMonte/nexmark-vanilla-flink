@@ -3,6 +3,7 @@ package io.ventura.nexmark.NexmarkQuery8;
 import io.ventura.nexmark.beans.AuctionEvent0;
 import io.ventura.nexmark.beans.NewPersonEvent0;
 import io.ventura.nexmark.beans.Query8WindowOutput;
+import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.RichCoGroupFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
@@ -11,6 +12,8 @@ import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.io.CsvInputFormat;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.metrics.Histogram;
+import org.apache.flink.metrics.HistogramStatistics;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
@@ -227,8 +230,8 @@ public class NexmarkQuery8 {
 	private static final class PersonsFlatMapper implements FlatMapFunction<NewPersonEvent0[], NewPersonEvent0> {
 		@Override
 		public void flatMap(NewPersonEvent0[] items, Collector<NewPersonEvent0> out) throws Exception {
-			for (NewPersonEvent0 item : items) {
-				out.collect(item);
+			for (int i = 0; i < items.length; i++) {
+				out.collect(items[i]);
 			}
 		}
 	}
@@ -236,39 +239,112 @@ public class NexmarkQuery8 {
 	private static final class AuctionsFlatMapper implements FlatMapFunction<AuctionEvent0[], AuctionEvent0> {
 		@Override
 		public void flatMap(AuctionEvent0[] items, Collector<AuctionEvent0> out) throws Exception {
-			for (AuctionEvent0 item : items) {
-				out.collect(item);
+			for (int i = 0; i < items.length; i++) {
+				out.collect(items[i]);
 			}
+		}
+	}
+
+	private static final class SinkLatencyTrackingHistogramStatistics extends HistogramStatistics {
+
+		private final SummaryStatistics impl;
+
+		public SinkLatencyTrackingHistogramStatistics(SummaryStatistics original) {
+			this.impl = original.copy();
+		}
+
+		@Override
+		public double getQuantile(double v) {
+			return -1;
+		}
+
+		@Override
+		public long[] getValues() {
+			return new long[] {-1};
+		}
+
+		@Override
+		public int size() {
+			return (int) impl.getN();
+		}
+
+		@Override
+		public double getMean() {
+			return impl.getMean();
+		}
+
+		@Override
+		public double getStdDev() {
+			return impl.getStandardDeviation();
+		}
+
+		@Override
+		public long getMax() {
+			return (long) impl.getMax();
+		}
+
+		@Override
+		public long getMin() {
+			return (long) impl.getMin();
+		}
+	}
+
+	private static final class SinkLatencyTrackingHistogram implements Histogram {
+
+		private final SummaryStatistics impl = new SummaryStatistics();
+
+		@Override
+		public void update(long l) {
+			impl.addValue(l);
+		}
+
+		@Override
+		public long getCount() {
+			return impl.getN();
+		}
+
+		@Override
+		public HistogramStatistics getStatistics() {
+			return new SinkLatencyTrackingHistogramStatistics(impl);
 		}
 	}
 
 	private static final class NexmarkQuery8LatencyTrackingSink extends RichSinkFunction<Query8WindowOutput> {
 
-		private transient StringBuilder buffer;
+//		private transient StringBuilder buffer;
+		private transient Histogram sinkLatencyWindowEviction;
+		private transient Histogram sinkLatencyPersonCreation;
+		private transient Histogram sinkLatencyAuctionCreation;
 
 		@Override
 		public void open(Configuration parameters) throws Exception {
 			super.open(parameters);
-			buffer = new StringBuilder(256);
+//			buffer = new StringBuilder(256);
+			sinkLatencyWindowEviction = getRuntimeContext().getMetricGroup().histogram("sinkLatencyWindowEviction", new SinkLatencyTrackingHistogram());
+			sinkLatencyPersonCreation = getRuntimeContext().getMetricGroup().histogram("sinkLatencyPersonCreation", new SinkLatencyTrackingHistogram());
+			sinkLatencyAuctionCreation = getRuntimeContext().getMetricGroup().histogram("sinkLatencyAuctionCreation", new SinkLatencyTrackingHistogram());
 		}
 
 		@Override
 		public void invoke(Query8WindowOutput record, Context context) throws Exception {
 			long timeMillis = context.currentProcessingTime();
-			try {
-				buffer.append(timeMillis);
-				buffer.append(",");
-				buffer.append(timeMillis - record.getWindowEvictingTimestamp());
-				buffer.append(",");
-				buffer.append(timeMillis - record.getAuctionCreationTimestamp());
-				buffer.append(",");
-				buffer.append(timeMillis - record.getPersonCreationTimestamp());
-				buffer.append(",");
-				buffer.append(record.getPersonId());
-				LOG.info("Nexmark8Sink - {}", buffer.toString());
-			} finally {
-				buffer.setLength(0);
-			}
+			sinkLatencyPersonCreation.update(timeMillis - record.getPersonCreationTimestamp());
+			sinkLatencyWindowEviction.update(timeMillis - record.getWindowEvictingTimestamp());
+			sinkLatencyAuctionCreation.update(timeMillis - record.getAuctionCreationTimestamp());
+//			try {
+//				buffer.append(timeMillis);
+//				buffer.append(",");
+//				buffer.append(timeMillis - record.getWindowEvictingTimestamp());
+//				buffer.append(",");
+//				buffer.append(timeMillis - record.getAuctionCreationTimestamp());
+//				buffer.append(",");
+//				buffer.append(timeMillis - record.getPersonCreationTimestamp());
+//				buffer.append(",");
+//				buffer.append(record.getPersonId());
+//				LOG.info("Nexmark8Sink - {}", buffer.toString());
+//			} finally {
+//				buffer.setLength(0);
+//			}
 		}
 	}
 
@@ -282,7 +358,7 @@ public class NexmarkQuery8 {
 		final int checkpointingInterval = params.getInt("checkpointingInterval", 0);
 		final long checkpointingTimeout = params.getLong("checkpointingTimeout", CheckpointConfig.DEFAULT_TIMEOUT);
 		final int concurrentCheckpoints = params.getInt("concurrentCheckpoints", 1);
-		final long latencyTrackingInterval = params.getLong("latencyTrackingInterval", 0);
+		final long latencyTrackingInterval = params.getLong("latencyTrackingInterval", 2000);
 		final int minPauseBetweenCheckpoints = params.getInt("minPauseBetweenCheckpoints", checkpointingInterval);
 		final int parallelism = params.getInt("parallelism", 1);
 		final int maxParallelism = params.getInt("maxParallelism", 1024);
@@ -303,6 +379,7 @@ public class NexmarkQuery8 {
 			env.getCheckpointConfig().setFailOnCheckpointingErrors(true);
 		}
 		env.setParallelism(parallelism);
+		env.getConfig().enableObjectReuse();
 		env.setMaxParallelism(maxParallelism);
 		env.getConfig().setLatencyTrackingInterval(latencyTrackingInterval);
 
