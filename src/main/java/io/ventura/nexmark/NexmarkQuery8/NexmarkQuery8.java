@@ -9,7 +9,6 @@ import org.apache.flink.api.common.functions.RichCoGroupFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
-import org.apache.flink.api.java.io.CsvInputFormat;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.metrics.Histogram;
@@ -28,16 +27,15 @@ import org.apache.flink.streaming.util.serialization.KeyedDeserializationSchema;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.Preconditions;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.producer.ProducerConfig;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
-import java.util.List;
+
 import java.util.Properties;
 
 public class NexmarkQuery8 {
@@ -118,7 +116,7 @@ public class NexmarkQuery8 {
 
 	private static class PersonDeserializationSchema implements KeyedDeserializationSchema<NewPersonEvent0[]> {
 
-		private static final int PERSON_RECORD_SIZE = 128;
+		private static final int PERSON_RECORD_SIZE = 206;
 
 		private static final TypeInformation<NewPersonEvent0[]> FLINK_INTERNAL_TYPE = TypeInformation.of(new TypeHint<NewPersonEvent0[]>() {});
 
@@ -150,7 +148,7 @@ public class NexmarkQuery8 {
 
 			NewPersonEvent0[] data = new NewPersonEvent0[itemsInThisBuffer];
 
-			byte[] tmp = new byte[16];
+			byte[] tmp = new byte[32];
 
 			long ingestionTimestamp = System.currentTimeMillis();
 
