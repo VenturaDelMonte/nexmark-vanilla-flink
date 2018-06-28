@@ -27,6 +27,7 @@ import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer011;
 import org.apache.flink.streaming.util.serialization.KeyedDeserializationSchema;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.Preconditions;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,136 +48,6 @@ public class NexmarkQuery8 {
 
 	private static final String PERSONS_TOPIC = "nexmark_persons";
 	private static final String AUCTIONS_TOPIC = "nexmark_auctions";
-
-	private static class PersonDeserializationSchema implements KeyedDeserializationSchema<NewPersonEvent0[]> {
-
-		private static final int PERSON_RECORD_SIZE = 72;
-
-		private static final TypeInformation<NewPersonEvent0[]> FLINK_INTERNAL_TYPE = TypeInformation.of(new TypeHint<NewPersonEvent0[]>() {});
-
-		//private final long bytesToRead;
-
-//		private long bytesReadSoFar;
-
-		private long lastBacklog = Long.MAX_VALUE;
-
-		public PersonDeserializationSchema() {
-			//this.bytesToRead = (bytesToRead / PERSON_RECORD_SIZE) * PERSON_RECORD_SIZE;
-//			this.bytesReadSoFar = 0;
-		}
-
-		@Override
-		public NewPersonEvent0[] deserialize(
-				byte[] messageKey,
-				byte[] buffer,
-				String topic,
-				int partition,
-				long offset) throws IOException {
-
-			ByteBuffer wrapper = ByteBuffer.wrap(buffer);
-			int checksum = wrapper.getInt();
-			int itemsInThisBuffer = wrapper.getInt();
-			long newBacklog = wrapper.getLong();
-
-			Preconditions.checkArgument(checksum == 0x30011991);
-
-			NewPersonEvent0[] data = new NewPersonEvent0[itemsInThisBuffer];
-
-			byte[] tmp = new byte[4 * 10];
-
-			StringBuilder helper = new StringBuilder(64);
-			for (int i = 0; i < data.length; i++) {
-				long id = wrapper.getLong();
-				wrapper.get(tmp);
-				long c = wrapper.getLong();
-				int a = wrapper.getInt();
-				int b = wrapper.getInt();
-				long ts = wrapper.getLong();
-				String s = new String(tmp);
-				String cc = helper.append(c).append(a).append(b).toString();
-				data[i] = new NewPersonEvent0(ts, id, s, s, s, s, s, cc, cc, cc);
-				helper.setLength(0);
-			}
-
-//			bytesReadSoFar += buffer.length;
-			lastBacklog = newBacklog;
-
-			return data;
-		}
-
-		@Override
-		public boolean isEndOfStream(NewPersonEvent0[] nextElement) {
-			return lastBacklog <= 0;
-		}
-
-		@Override
-		public TypeInformation<NewPersonEvent0[]> getProducedType() {
-			return FLINK_INTERNAL_TYPE;
-		}
-	}
-
-	private static class AuctionsDeserializationSchema implements KeyedDeserializationSchema<AuctionEvent0[]> {
-
-		private static final int AUCTION_RECORD_SIZE = 49;
-
-		private static final TypeInformation<AuctionEvent0[]> FLINK_INTERNAL_TYPE = TypeInformation.of(new TypeHint<AuctionEvent0[]>() {});
-
-//		private final long bytesToRead;
-
-//		private long bytesReadSoFar;
-
-		private long lastBacklog = Long.MAX_VALUE;
-
-		public AuctionsDeserializationSchema() {
-//			this.bytesToRead = (bytesToRead / AUCTION_RECORD_SIZE) * AUCTION_RECORD_SIZE;
-//			this.bytesReadSoFar = 0;
-		}
-
-		@Override
-		public AuctionEvent0[] deserialize(
-				byte[] messageKey,
-				byte[] buffer,
-				String topic,
-				int partition,
-				long offset) throws IOException {
-
-			ByteBuffer wrapper = ByteBuffer.wrap(buffer);
-			int checksum = wrapper.getInt();
-			int itemsInThisBuffer = wrapper.getInt();
-			long newBacklog = wrapper.getLong();
-
-			Preconditions.checkArgument(checksum == 0x30061992);
-
-			AuctionEvent0[] data = new AuctionEvent0[itemsInThisBuffer];
-
-			for (int i = 0; i < data.length; i++) {
-				long id = wrapper.getLong();
-				long pid = wrapper.getLong();
-				byte c = wrapper.get();
-				int itemId = wrapper.getInt();
-				long start = wrapper.getLong();
-				long end = wrapper.getLong();
-				int price = wrapper.getInt();
-				long ts = wrapper.getLong();
-				data[i] = new AuctionEvent0(ts, id, itemId, pid, (double) price, c, start, end);
-			}
-
-//			bytesReadSoFar += buffer.length;
-			lastBacklog = newBacklog;
-
-			return data;
-		}
-
-		@Override
-		public boolean isEndOfStream(AuctionEvent0[] nextElement) {
-			return lastBacklog <= 0;
-		}
-
-		@Override
-		public TypeInformation<AuctionEvent0[]> getProducedType() {
-			return FLINK_INTERNAL_TYPE;
-		}
-	}
 
 	public static class JoiningNewUsersWithAuctionsCoGroupFunction extends RichCoGroupFunction<NewPersonEvent0, AuctionEvent0, Query8WindowOutput> {
 
@@ -242,6 +113,178 @@ public class NexmarkQuery8 {
 			for (int i = 0; i < items.length; i++) {
 				out.collect(items[i]);
 			}
+		}
+	}
+
+	private static class PersonDeserializationSchema implements KeyedDeserializationSchema<NewPersonEvent0[]> {
+
+		private static final int PERSON_RECORD_SIZE = 128;
+
+		private static final TypeInformation<NewPersonEvent0[]> FLINK_INTERNAL_TYPE = TypeInformation.of(new TypeHint<NewPersonEvent0[]>() {});
+
+		//private final long bytesToRead;
+
+//		private long bytesReadSoFar;
+
+		private long lastBacklog = Long.MAX_VALUE;
+
+		public PersonDeserializationSchema() {
+			//this.bytesToRead = (bytesToRead / PERSON_RECORD_SIZE) * PERSON_RECORD_SIZE;
+//			this.bytesReadSoFar = 0;
+		}
+
+		@Override
+		public NewPersonEvent0[] deserialize(
+				byte[] messageKey,
+				byte[] buffer,
+				String topic,
+				int partition,
+				long offset) throws IOException {
+
+			ByteBuffer wrapper = ByteBuffer.wrap(buffer).asReadOnlyBuffer();
+			int checksum = wrapper.getInt();
+			int itemsInThisBuffer = wrapper.getInt();
+			long newBacklog = wrapper.getLong();
+
+			Preconditions.checkArgument(checksum == 0x30011991);
+
+			NewPersonEvent0[] data = new NewPersonEvent0[itemsInThisBuffer];
+
+			byte[] tmp = new byte[16];
+
+			long ingestionTimestamp = System.currentTimeMillis();
+
+			for (int i = 0; i < data.length; i++) {
+				long id = wrapper.getLong();
+				wrapper.get(tmp);
+				String name = new String(Arrays.copyOf(tmp, tmp.length));
+				wrapper.get(tmp);
+				String surname = new String(Arrays.copyOf(tmp, tmp.length));
+				wrapper.get(tmp);
+				String email = name + "." + surname + "@" + new String(Arrays.copyOf(tmp, tmp.length));
+				wrapper.get(tmp);
+				String city = new String(Arrays.copyOf(tmp, tmp.length));
+				wrapper.get(tmp);
+				String country = new String(Arrays.copyOf(tmp, tmp.length));
+				long creditCard0 = wrapper.getLong();
+				long creditCard1 = wrapper.getLong();
+				int a = wrapper.getInt();
+				int b = wrapper.getInt();
+				int c = wrapper.getInt();
+				short maleOrFemale = wrapper.getShort();
+				long timestamp = wrapper.getLong(); // 128
+//				Preconditions.checkArgument(timestamp > 0);
+				data[i] = new NewPersonEvent0(
+						timestamp,
+						id,
+						name + " " + surname,
+						email,
+						city,
+						country,
+						"" + (a - c),
+						"" + (b - c),
+						email,
+						"" + (creditCard0 + creditCard1),
+						ingestionTimestamp);
+			}
+
+//			bytesReadSoFar += buffer.length;
+			Preconditions.checkArgument(newBacklog < lastBacklog, "newBacklog: %s oldBacklog: %s", newBacklog, lastBacklog);
+			lastBacklog = newBacklog;
+
+			return data;
+		}
+
+		@Override
+		public boolean isEndOfStream(NewPersonEvent0[] nextElement) {
+			return lastBacklog <= 0;
+		}
+
+		@Override
+		public TypeInformation<NewPersonEvent0[]> getProducedType() {
+			return FLINK_INTERNAL_TYPE;
+		}
+	}
+
+	private static class AuctionsDeserializationSchema implements KeyedDeserializationSchema<AuctionEvent0[]> {
+
+		private static final int AUCTION_RECORD_SIZE = 269;
+
+		private static final TypeInformation<AuctionEvent0[]> FLINK_INTERNAL_TYPE = TypeInformation.of(new TypeHint<AuctionEvent0[]>() {});
+
+//		private final long bytesToRead;
+
+//		private long bytesReadSoFar;
+
+		private long lastBacklog = Long.MAX_VALUE;
+
+		public AuctionsDeserializationSchema() {
+//			this.bytesToRead = (bytesToRead / AUCTION_RECORD_SIZE) * AUCTION_RECORD_SIZE;
+//			this.bytesReadSoFar = 0;
+		}
+
+		@Override
+		public AuctionEvent0[] deserialize(
+				byte[] messageKey,
+				byte[] buffer,
+				String topic,
+				int partition,
+				long offset) throws IOException {
+
+			ByteBuffer wrapper = ByteBuffer.wrap(buffer);
+			int checksum = wrapper.getInt();
+			int itemsInThisBuffer = wrapper.getInt();
+			long newBacklog = wrapper.getLong();
+
+			Preconditions.checkArgument(checksum == 0x30061992);
+
+			AuctionEvent0[] data = new AuctionEvent0[itemsInThisBuffer];
+			long ingestionTimestamp = System.currentTimeMillis();
+
+			byte[] tmp0 = new byte[20];
+			byte[] tmp1 = new byte[200];
+
+			for (int i = 0; i < data.length; i++) {
+				long id = wrapper.getLong();
+				long pid = wrapper.getLong();
+				byte c = wrapper.get();
+				int itemId = wrapper.getInt();
+				long start = wrapper.getLong();
+				long end = wrapper.getLong();
+				int price = wrapper.getInt();
+				wrapper.get(tmp0);
+				wrapper.get(tmp1);
+				long ts = wrapper.getLong();
+//				Preconditions.checkArgument(ts > 0);
+				data[i] = new AuctionEvent0(
+						ts,
+						id,
+						new String(Arrays.copyOf(tmp0, tmp0.length)),
+						new String(Arrays.copyOf(tmp1, tmp1.length)),
+						itemId,
+						pid,
+						(double) price,
+						c,
+						start,
+						end,
+						ingestionTimestamp);
+			}
+
+//			bytesReadSoFar += buffer.length;
+			Preconditions.checkArgument(newBacklog < lastBacklog, "newBacklog: %s oldBacklog: %s", newBacklog, lastBacklog);
+			lastBacklog = newBacklog;
+
+			return data;
+		}
+
+		@Override
+		public boolean isEndOfStream(AuctionEvent0[] nextElement) {
+			return lastBacklog <= 0;
+		}
+
+		@Override
+		public TypeInformation<AuctionEvent0[]> getProducedType() {
+			return FLINK_INTERNAL_TYPE;
 		}
 	}
 
@@ -367,7 +410,8 @@ public class NexmarkQuery8 {
 
 		Properties baseCfg = new Properties();
 
-		baseCfg.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServers);
+		baseCfg.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServers);
+		baseCfg.setProperty(ConsumerConfig.RECEIVE_BUFFER_CONFIG, "" + (128 * 1024));
 
 		env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 		env.setRestartStrategy(RestartStrategies.noRestart());
@@ -454,7 +498,8 @@ public class NexmarkQuery8 {
 
 		Properties baseCfg = new Properties();
 
-		baseCfg.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServers);
+		baseCfg.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServers);
+		baseCfg.setProperty(ConsumerConfig.RECEIVE_BUFFER_CONFIG, "" + (128 * 1024));
 
 		env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 		env.setRestartStrategy(RestartStrategies.noRestart());

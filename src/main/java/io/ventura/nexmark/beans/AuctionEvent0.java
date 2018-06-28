@@ -5,6 +5,7 @@ import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 
 import javax.annotation.Nonnegative;
+import javax.annotation.Nonnull;
 import java.io.Serializable;
 
 /**
@@ -25,17 +26,22 @@ public class AuctionEvent0 implements Serializable {
     public long categoryId;
     public long ingestionTimestamp;
 
+    private String name;
+    private String descr;
+
     public AuctionEvent0() {
 //        LOG.debug("Created person event with default constructor");
     }
 
-    public AuctionEvent0(long timestamp, long auctionId, long itemId, long personId, double initialPrice, long categoryID, long start, long end) {
-        this(timestamp, auctionId, itemId, personId, initialPrice, categoryID, start, end, System.currentTimeMillis());
+    public AuctionEvent0(long timestamp, long auctionId, String name, String descr, long itemId, long personId, double initialPrice, long categoryID, long start, long end) {
+        this(timestamp, auctionId, name, descr, itemId, personId, initialPrice, categoryID, start, end, System.currentTimeMillis());
     }
 
     public AuctionEvent0(
     		@Nonnegative long timestamp,
 			@Nonnegative long auctionId,
+			@Nonnull String name,
+			@Nonnull String descr,
 			@Nonnegative long itemId,
 			@Nonnegative long personId,
 			@Nonnegative double initialPrice,
@@ -50,6 +56,8 @@ public class AuctionEvent0 implements Serializable {
         this.personId = personId;
         this.itemId = itemId;
         this.initialPrice = initialPrice;
+        this.name = name;
+        this.descr = descr;
         this.categoryId = categoryID;
         this.start = start;
         this.end = end;
@@ -92,8 +100,15 @@ public class AuctionEvent0 implements Serializable {
         return ingestionTimestamp;
     }
 
+    public String getName() {
+    	return name;
+	}
 
-    public static class AuctionEventKryoSerializer extends com.esotericsoftware.kryo.Serializer<AuctionEvent0> {
+	public String getDescr() {
+		return descr;
+	}
+
+	public static class AuctionEventKryoSerializer extends com.esotericsoftware.kryo.Serializer<AuctionEvent0> {
 
     	public AuctionEventKryoSerializer() {
 
@@ -104,6 +119,8 @@ public class AuctionEvent0 implements Serializable {
 			output.writeLong(event.timestamp);
 			output.writeLong(event.auctionId);
 			output.writeLong(event.itemId);
+			output.writeString(event.name);
+			output.writeString(event.descr);
 			output.writeLong(event.personId);
 			output.writeDouble(event.initialPrice);
 			output.writeLong(event.start);
@@ -117,6 +134,8 @@ public class AuctionEvent0 implements Serializable {
 			Long timestamp = input.readLong();
 			long auctionId = input.readLong();
 			long itemId = input.readLong();
+			String name = input.readString();
+			String descr = input.readString();
 			long personId = input.readLong();
 			Double initialPrice = input.readDouble();
 			Long start = input.readLong();
@@ -124,7 +143,7 @@ public class AuctionEvent0 implements Serializable {
 			Long categoryId = input.readLong();
 			Long ingestionTimestamp = input.readLong();
 
-			return new AuctionEvent0(timestamp, auctionId, itemId, personId, initialPrice, categoryId, start, end, ingestionTimestamp);
+			return new AuctionEvent0(timestamp, auctionId, name, descr, itemId, personId, initialPrice, categoryId, start, end, ingestionTimestamp);
 		}
 }
 
