@@ -52,6 +52,7 @@ public class NexmarkSuite {
 		config.setInteger(WebOptions.PORT, 8081);
 
 		config.setString(CheckpointingOptions.STATE_BACKEND, "rocksdb");
+		config.setString(CheckpointingOptions.CHECKPOINTS_DIRECTORY, "file:///tmp/flink");
 
 		cluster = new TestingCluster(config);
 		cluster.start();
