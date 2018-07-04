@@ -94,10 +94,6 @@ public class NewPersonEvent0 implements Serializable {
 		return province;
 	}
 
-	public String getZipcode() {
-		return zipcode;
-	}
-
 	public String getHomepage() {
 		return homepage;
 	}
