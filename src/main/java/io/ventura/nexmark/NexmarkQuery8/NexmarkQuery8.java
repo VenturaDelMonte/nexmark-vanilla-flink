@@ -413,6 +413,7 @@ public class NexmarkQuery8 {
 		baseCfg.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServers);
 		baseCfg.setProperty(ConsumerConfig.RECEIVE_BUFFER_CONFIG, "" + (128 * 1024));
 		baseCfg.setProperty(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, "" + 8192);
+		baseCfg.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "im-job-vanilla");
 
 		env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 		env.setRestartStrategy(RestartStrategies.noRestart());
@@ -422,6 +423,7 @@ public class NexmarkQuery8 {
 			env.getCheckpointConfig().setMaxConcurrentCheckpoints(concurrentCheckpoints);
 			env.getCheckpointConfig().setCheckpointTimeout(checkpointingTimeout);
 			env.getCheckpointConfig().setFailOnCheckpointingErrors(true);
+			env.getCheckpointConfig().enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.DELETE_ON_CANCELLATION);
 		}
 		env.setParallelism(parallelism);
 		env.getConfig().enableObjectReuse();
@@ -484,7 +486,6 @@ public class NexmarkQuery8 {
 			.addSink(new NexmarkQuery8LatencyTrackingSink())
 				.name("Nexmark8Sink")
 				.setParallelism(sinkParallelism);
-
 
 	}
 
