@@ -70,11 +70,10 @@ public class NexmarkQuery8 {
 			if (!auctionIterator.hasNext()) {
 				return;
 			}
-
+			double start = System.nanoTime();
 			while (personIterator.hasNext()) {
 				NewPersonEvent0 person = personIterator.next();
 
-				long ts = System.currentTimeMillis();
 				long auctionCreationTimestampLatest = Long.MIN_VALUE;
 				long auctionIngestionTimestampLatest = Long.MIN_VALUE;
 				for (AuctionEvent0 auction : auctions) {
@@ -84,7 +83,7 @@ public class NexmarkQuery8 {
 						auctionCreationTimestampLatest = auction.getTimestamp();
 					}
 				}
-
+				long ts = System.currentTimeMillis();
 				out.collect(new Query8WindowOutput(
 							ts,
 							person.getTimestamp(),
@@ -93,6 +92,8 @@ public class NexmarkQuery8 {
 							auctionIngestionTimestampLatest,
 							person.getPersonId()));
 			}
+			double end = System.nanoTime();
+			LOG.info("Time spent firing window: {} - {} sec", getRuntimeContext().getIndexOfThisSubtask(), (end - start) / 1_000_000_000.0);
 		}
 	}
 
@@ -562,11 +563,11 @@ public class NexmarkQuery8 {
 		ParameterTool params = ParameterTool.fromArgs(args);
 
 		try {
-			if (params.getBoolean("debug", false)) {
-				runNexmarkDebug(env, params);
-			} else {
+//			if (params.getBoolean("debug", false)) {
+//				runNexmarkDebug(env, params);
+//			} else {
 				runNexmark(env, params);
-			}
+//			}
 			env.execute("Nexmark Query 8 (Kafka)");
 		} catch (Exception error) {
 			LOG.error("Error", error);
