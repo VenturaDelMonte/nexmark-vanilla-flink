@@ -125,7 +125,7 @@ public class NexmarkQuery8 {
 
 //		private long bytesReadSoFar;
 
-		private long lastBacklog = Long.MAX_VALUE;
+		private boolean isPartitionConsumed = false;
 
 		public PersonDeserializationSchema() {
 			//this.bytesToRead = (bytesToRead / PERSON_RECORD_SIZE) * PERSON_RECORD_SIZE;
@@ -189,15 +189,15 @@ public class NexmarkQuery8 {
 			}
 
 //			bytesReadSoFar += buffer.length;
-			Preconditions.checkArgument(newBacklog < lastBacklog, "newBacklog: %s oldBacklog: %s", newBacklog, lastBacklog);
-			lastBacklog = newBacklog;
-
+//			Preconditions.checkArgument(newBacklog < lastBacklog, "newBacklog: %s oldBacklog: %s", newBacklog, lastBacklog);
+//			lastBacklog = newBacklog;
+			isPartitionConsumed = newBacklog <= itemsInThisBuffer;
 			return data;
 		}
 
 		@Override
 		public boolean isEndOfStream(NewPersonEvent0[] nextElement) {
-			return lastBacklog <= 0;
+			return isPartitionConsumed;
 		}
 
 		@Override
@@ -216,7 +216,7 @@ public class NexmarkQuery8 {
 
 //		private long bytesReadSoFar;
 
-		private long lastBacklog = Long.MAX_VALUE;
+		private boolean isPartitionConsumed = false;
 
 		public AuctionsDeserializationSchema() {
 //			this.bytesToRead = (bytesToRead / AUCTION_RECORD_SIZE) * AUCTION_RECORD_SIZE;
@@ -272,15 +272,15 @@ public class NexmarkQuery8 {
 			}
 
 //			bytesReadSoFar += buffer.length;
-			Preconditions.checkArgument(newBacklog < lastBacklog, "newBacklog: %s oldBacklog: %s", newBacklog, lastBacklog);
-			lastBacklog = newBacklog;
+//			Preconditions.checkArgument(newBacklog < lastBacklog, "newBacklog: %s oldBacklog: %s", newBacklog, lastBacklog);
+			isPartitionConsumed = newBacklog <= itemsInThisBuffer;
 
 			return data;
 		}
 
 		@Override
 		public boolean isEndOfStream(AuctionEvent0[] nextElement) {
-			return lastBacklog <= 0;
+			return isPartitionConsumed;
 		}
 
 		@Override
