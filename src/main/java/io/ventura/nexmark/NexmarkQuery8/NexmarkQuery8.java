@@ -11,6 +11,7 @@ import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.contrib.streaming.state.RocksDBStateBackendFactory;
 import org.apache.flink.metrics.Histogram;
 import org.apache.flink.metrics.HistogramStatistics;
 import org.apache.flink.streaming.api.TimeCharacteristic;
@@ -424,7 +425,7 @@ public class NexmarkQuery8 {
 			env.getCheckpointConfig().setMaxConcurrentCheckpoints(concurrentCheckpoints);
 			env.getCheckpointConfig().setCheckpointTimeout(checkpointingTimeout);
 			env.getCheckpointConfig().setFailOnCheckpointingErrors(true);
-			env.getCheckpointConfig().enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.DELETE_ON_CANCELLATION);
+			env.getCheckpointConfig().enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
 		}
 		env.setParallelism(parallelism);
 		env.getConfig().enableObjectReuse();
