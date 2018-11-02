@@ -418,7 +418,7 @@ public class NexmarkQuery8 {
 		baseCfg.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "im-job-vanilla");
 
 		env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
-		env.setRestartStrategy(RestartStrategies.noRestart());
+		env.setRestartStrategy(RestartStrategies.fallBackRestart());
 		if (checkpointingInterval > 0) {
 			env.enableCheckpointing(checkpointingInterval);
 			env.getCheckpointConfig().setMinPauseBetweenCheckpoints(minPauseBetweenCheckpoints);
