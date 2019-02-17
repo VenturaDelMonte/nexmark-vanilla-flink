@@ -4,20 +4,44 @@ import io.ventura.nexmark.beans.AuctionEvent0;
 import io.ventura.nexmark.beans.NewPersonEvent0;
 import io.ventura.nexmark.beans.Query8WindowOutput;
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
+import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.functions.FlatMapFunction;
+import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.RichCoGroupFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
+import org.apache.flink.api.common.state.ListState;
+import org.apache.flink.api.common.state.ListStateDescriptor;
+import org.apache.flink.api.common.state.ValueState;
+import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.common.typeutils.CompatibilityResult;
+import org.apache.flink.api.common.typeutils.CompatibilityUtil;
+import org.apache.flink.api.common.typeutils.CompositeTypeSerializerConfigSnapshot;
+import org.apache.flink.api.common.typeutils.TypeDeserializerAdapter;
+import org.apache.flink.api.common.typeutils.TypeSerializer;
+import org.apache.flink.api.common.typeutils.TypeSerializerConfigSnapshot;
+import org.apache.flink.api.common.typeutils.UnloadableDummyTypeSerializer;
+import org.apache.flink.api.java.functions.KeySelector;
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.contrib.streaming.state.RocksDBStateBackendFactory;
+import org.apache.flink.core.io.SimpleVersionedSerializer;
+import org.apache.flink.core.memory.DataInputView;
+import org.apache.flink.core.memory.DataOutputView;
 import org.apache.flink.metrics.Histogram;
 import org.apache.flink.metrics.HistogramStatistics;
+import org.apache.flink.runtime.checkpoint.MasterTriggerRestoreHook;
+import org.apache.flink.runtime.state.FunctionInitializationContext;
+import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.TimeCharacteristic;
+import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
+import org.apache.flink.streaming.api.checkpoint.WithMasterCheckpointHook;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
@@ -32,12 +56,16 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Iterator;
 
+import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 public class NexmarkQuery8 {
 
@@ -354,7 +382,7 @@ public class NexmarkQuery8 {
 		}
 	}
 
-	private static final class NexmarkQuery8LatencyTrackingSink extends RichSinkFunction<Query8WindowOutput> {
+	private static final class NexmarkQuery8LatencyTrackingSink extends RichSinkFunction<Query8WindowOutput> implements WithMasterCheckpointHook<Void> {
 
 //		private transient StringBuilder buffer;
 		private transient Histogram sinkLatencyWindowEviction;
@@ -391,6 +419,35 @@ public class NexmarkQuery8 {
 //				buffer.setLength(0);
 //			}
 		}
+
+		@Override
+		public MasterTriggerRestoreHook<Void> createMasterTriggerRestoreHook() {
+			return new MasterTriggerRestoreHook<Void>() {
+				@Override
+				public String getIdentifier() {
+					return getRuntimeContext().getTaskNameWithSubtasks() + "#Hook";
+				}
+
+				@Nullable
+				@Override
+				public CompletableFuture<Void> triggerCheckpoint(long checkpointId, long timestamp, Executor executor) throws Exception {
+					return null;
+				}
+
+				@Override
+				public void restoreCheckpoint(long checkpointId, @Nullable Void checkpointData) throws Exception {
+
+				}
+
+
+
+				@Nullable
+				@Override
+				public SimpleVersionedSerializer<Void> createCheckpointDataSerializer() {
+					return null;
+				}
+			};
+		}
 	}
 
 	public static void runNexmark(StreamExecutionEnvironment env, ParameterTool params) throws Exception {
@@ -425,6 +482,7 @@ public class NexmarkQuery8 {
 			env.getCheckpointConfig().setMaxConcurrentCheckpoints(concurrentCheckpoints);
 			env.getCheckpointConfig().setCheckpointTimeout(checkpointingTimeout);
 			env.getCheckpointConfig().setFailOnCheckpointingErrors(true);
+
 			env.getCheckpointConfig().enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
 		}
 		env.setParallelism(parallelism);
@@ -476,19 +534,410 @@ public class NexmarkQuery8 {
 				}).setParallelism(sourceParallelism).returns(TypeInformation.of(new TypeHint<AuctionEvent0>() {}))
 		;
 
+		UnionTypeInfo<NewPersonEvent0, AuctionEvent0> unionType = new UnionTypeInfo<>(in1.getType(), in2.getType());
 
-		in1
-			.coGroup(in2)
-				.where(NewPersonEvent0::getPersonId)
-				.equalTo(AuctionEvent0::getPersonId)
-				.window(TumblingEventTimeWindows.of(Time.seconds(windowDuration)))
-				.with(new JoiningNewUsersWithAuctionsCoGroupFunction())
-				.name("WindowOperator")
-				.setParallelism(windowParallelism)
-			.addSink(new NexmarkQuery8LatencyTrackingSink())
-				.name("Nexmark8Sink")
-				.setParallelism(sinkParallelism);
+		DataStream<TaggedUnion<NewPersonEvent0, AuctionEvent0>> taggedInput1 = in1
+				.map(new Input1Tagger<NewPersonEvent0, AuctionEvent0>())
+				.setParallelism(in1.getParallelism())
+				.returns(unionType);
+		DataStream<TaggedUnion<NewPersonEvent0, AuctionEvent0>> taggedInput2 = in2
+				.map(new Input2Tagger<NewPersonEvent0, AuctionEvent0>())
+				.setParallelism(in2.getParallelism())
+				.returns(unionType);
 
+		DataStream<TaggedUnion<NewPersonEvent0, AuctionEvent0>> unionStream = taggedInput1.union(taggedInput2);
+
+		JoinUDF function = new JoinUDF();
+
+
+
+		unionStream
+			.keyBy(new KeySelector<TaggedUnion<NewPersonEvent0, AuctionEvent0>, Long>() {
+				@Override
+				public Long getKey(TaggedUnion<NewPersonEvent0, AuctionEvent0> value) throws Exception {
+					return value.isOne() ? value.getOne().personId : value.getTwo().personId;
+				}
+			})
+			.process(function)
+			.name("WindowOperator(" + windowDuration + ")")
+			.setParallelism(windowParallelism)
+		.addSink(new NexmarkQuery8LatencyTrackingSink())
+			.name("Nexmark8Sink")
+			.setParallelism(sinkParallelism);
+
+
+//		in1
+//			.coGroup(in2)
+//				.where(NewPersonEvent0::getPersonId)
+//				.equalTo(AuctionEvent0::getPersonId)
+//				.window(TumblingEventTimeWindows.of(Time.seconds(windowDuration)))
+//				.with(new JoiningNewUsersWithAuctionsCoGroupFunction())
+//				.name("WindowOperator")
+//				.setParallelism(windowParallelism)
+//			.addSink(new NexmarkQuery8LatencyTrackingSink())
+//				.name("Nexmark8Sink")
+//				.setParallelism(sinkParallelism);
+
+	}
+
+	private static final class JoinUDF
+			extends KeyedProcessFunction<Long, TaggedUnion<NewPersonEvent0, AuctionEvent0>, Query8WindowOutput>
+			implements CheckpointedFunction {
+
+
+		private transient ValueState<NewPersonEvent0> activeUser;
+		private transient ListState<AuctionEvent0> matchingAuctions;
+
+		@Override
+		public void processElement(
+				TaggedUnion<NewPersonEvent0, AuctionEvent0> value,
+				Context ctx,
+				Collector<Query8WindowOutput> out) throws Exception {
+
+
+			if (value.isOne()) {
+				activeUser.update(value.getOne());
+			} else {
+				matchingAuctions.add(value.getTwo());
+			}
+
+		}
+
+		@Override
+		public void snapshotState(FunctionSnapshotContext context) throws Exception {
+		}
+
+		@Override
+		public void initializeState(FunctionInitializationContext context) throws Exception {
+			ValueStateDescriptor<NewPersonEvent0> personDescriptor =
+					new ValueStateDescriptor<NewPersonEvent0>("active-person", TypeInformation.of(NewPersonEvent0.class));
+
+			ListStateDescriptor<AuctionEvent0> windowContentDescriptor =
+				new ListStateDescriptor<>("window-contents", TypeInformation.of(AuctionEvent0.class));
+
+			activeUser = context.getKeyedStateStore().getState(personDescriptor);
+			matchingAuctions = context.getKeyedStateStore().getListState(windowContentDescriptor);
+		}
+	}
+
+	private static class Input1Tagger<T1, T2> implements MapFunction<T1, TaggedUnion<T1, T2>> {
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public TaggedUnion<T1, T2> map(T1 value) throws Exception {
+			return TaggedUnion.one(value);
+		}
+	}
+
+	private static class Input2Tagger<T1, T2> implements MapFunction<T2, TaggedUnion<T1, T2>> {
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public TaggedUnion<T1, T2> map(T2 value) throws Exception {
+			return TaggedUnion.two(value);
+		}
+	}
+
+	private static class UnionKeySelector<T1, T2, KEY> implements KeySelector<TaggedUnion<T1, T2>, KEY> {
+		private static final long serialVersionUID = 1L;
+
+		private final KeySelector<T1, KEY> keySelector1;
+		private final KeySelector<T2, KEY> keySelector2;
+
+		public UnionKeySelector(KeySelector<T1, KEY> keySelector1,
+				KeySelector<T2, KEY> keySelector2) {
+			this.keySelector1 = keySelector1;
+			this.keySelector2 = keySelector2;
+		}
+
+		@Override
+		public KEY getKey(TaggedUnion<T1, T2> value) throws Exception{
+			if (value.isOne()) {
+				return keySelector1.getKey(value.getOne());
+			} else {
+				return keySelector2.getKey(value.getTwo());
+			}
+		}
+	}
+
+	public static class TaggedUnion<T1, T2> {
+		private final T1 one;
+		private final T2 two;
+
+		private TaggedUnion(T1 one, T2 two) {
+			this.one = one;
+			this.two = two;
+		}
+
+		public boolean isOne() {
+			return one != null;
+		}
+
+		public boolean isTwo() {
+			return two != null;
+		}
+
+		public T1 getOne() {
+			return one;
+		}
+
+		public T2 getTwo() {
+			return two;
+		}
+
+		public static <T1, T2> TaggedUnion<T1, T2> one(T1 one) {
+			return new TaggedUnion<>(one, null);
+		}
+
+		public static <T1, T2> TaggedUnion<T1, T2> two(T2 two) {
+			return new TaggedUnion<>(null, two);
+		}
+	}
+
+	private static class UnionTypeInfo<T1, T2> extends TypeInformation<TaggedUnion<T1, T2>> {
+		private static final long serialVersionUID = 1L;
+
+		private final TypeInformation<T1> oneType;
+		private final TypeInformation<T2> twoType;
+
+		public UnionTypeInfo(TypeInformation<T1> oneType,
+				TypeInformation<T2> twoType) {
+			this.oneType = oneType;
+			this.twoType = twoType;
+		}
+
+		@Override
+		public boolean isBasicType() {
+			return false;
+		}
+
+		@Override
+		public boolean isTupleType() {
+			return false;
+		}
+
+		@Override
+		public int getArity() {
+			return 2;
+		}
+
+		@Override
+		public int getTotalFields() {
+			return 2;
+		}
+
+		@Override
+		@SuppressWarnings("unchecked, rawtypes")
+		public Class<TaggedUnion<T1, T2>> getTypeClass() {
+			return (Class) TaggedUnion.class;
+		}
+
+		@Override
+		public boolean isKeyType() {
+			return true;
+		}
+
+		@Override
+		public TypeSerializer<TaggedUnion<T1, T2>> createSerializer(ExecutionConfig config) {
+			return new UnionSerializer<>(oneType.createSerializer(config), twoType.createSerializer(config));
+		}
+
+		@Override
+		public String toString() {
+			return "TaggedUnion<" + oneType + ", " + twoType + ">";
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (obj instanceof UnionTypeInfo) {
+				@SuppressWarnings("unchecked")
+				UnionTypeInfo<T1, T2> unionTypeInfo = (UnionTypeInfo<T1, T2>) obj;
+
+				return unionTypeInfo.canEqual(this) && oneType.equals(unionTypeInfo.oneType) && twoType.equals(unionTypeInfo.twoType);
+			} else {
+				return false;
+			}
+		}
+
+		@Override
+		public int hashCode() {
+			return 31 *  oneType.hashCode() + twoType.hashCode();
+		}
+
+		@Override
+		public boolean canEqual(Object obj) {
+			return obj instanceof UnionTypeInfo;
+		}
+	}
+
+	private static class UnionSerializer<T1, T2> extends TypeSerializer<TaggedUnion<T1, T2>> {
+		private static final long serialVersionUID = 1L;
+
+		private final TypeSerializer<T1> oneSerializer;
+		private final TypeSerializer<T2> twoSerializer;
+
+		public UnionSerializer(TypeSerializer<T1> oneSerializer, TypeSerializer<T2> twoSerializer) {
+			this.oneSerializer = oneSerializer;
+			this.twoSerializer = twoSerializer;
+		}
+
+		@Override
+		public boolean isImmutableType() {
+			return false;
+		}
+
+		@Override
+		public TypeSerializer<TaggedUnion<T1, T2>> duplicate() {
+			return this;
+		}
+
+		@Override
+		public TaggedUnion<T1, T2> createInstance() {
+			return null;
+		}
+
+		@Override
+		public TaggedUnion<T1, T2> copy(TaggedUnion<T1, T2> from) {
+			if (from.isOne()) {
+				return TaggedUnion.one(oneSerializer.copy(from.getOne()));
+			} else {
+				return TaggedUnion.two(twoSerializer.copy(from.getTwo()));
+			}
+		}
+
+		@Override
+		public TaggedUnion<T1, T2> copy(TaggedUnion<T1, T2> from, TaggedUnion<T1, T2> reuse) {
+			if (from.isOne()) {
+				return TaggedUnion.one(oneSerializer.copy(from.getOne()));
+			} else {
+				return TaggedUnion.two(twoSerializer.copy(from.getTwo()));
+			}		}
+
+		@Override
+		public int getLength() {
+			return -1;
+		}
+
+		@Override
+		public void serialize(TaggedUnion<T1, T2> record, DataOutputView target) throws IOException {
+			if (record.isOne()) {
+				target.writeByte(1);
+				oneSerializer.serialize(record.getOne(), target);
+			} else {
+				target.writeByte(2);
+				twoSerializer.serialize(record.getTwo(), target);
+			}
+		}
+
+		@Override
+		public TaggedUnion<T1, T2> deserialize(DataInputView source) throws IOException {
+			byte tag = source.readByte();
+			if (tag == 1) {
+				return TaggedUnion.one(oneSerializer.deserialize(source));
+			} else {
+				return TaggedUnion.two(twoSerializer.deserialize(source));
+			}
+		}
+
+		@Override
+		public TaggedUnion<T1, T2> deserialize(TaggedUnion<T1, T2> reuse,
+				DataInputView source) throws IOException {
+			byte tag = source.readByte();
+			if (tag == 1) {
+				return TaggedUnion.one(oneSerializer.deserialize(source));
+			} else {
+				return TaggedUnion.two(twoSerializer.deserialize(source));
+			}
+		}
+
+		@Override
+		public void copy(DataInputView source, DataOutputView target) throws IOException {
+			byte tag = source.readByte();
+			target.writeByte(tag);
+			if (tag == 1) {
+				oneSerializer.copy(source, target);
+			} else {
+				twoSerializer.copy(source, target);
+			}
+		}
+
+		@Override
+		public int hashCode() {
+			return 31 * oneSerializer.hashCode() + twoSerializer.hashCode();
+		}
+
+		@Override
+		@SuppressWarnings("unchecked")
+		public boolean equals(Object obj) {
+			if (obj instanceof UnionSerializer) {
+				UnionSerializer<T1, T2> other = (UnionSerializer<T1, T2>) obj;
+
+				return other.canEqual(this) && oneSerializer.equals(other.oneSerializer) && twoSerializer.equals(other.twoSerializer);
+			} else {
+				return false;
+			}
+		}
+
+		@Override
+		public boolean canEqual(Object obj) {
+			return obj instanceof UnionSerializer;
+		}
+
+		@Override
+		public TypeSerializerConfigSnapshot snapshotConfiguration() {
+			return new UnionSerializerConfigSnapshot<>(oneSerializer, twoSerializer);
+		}
+
+		@Override
+		public CompatibilityResult<TaggedUnion<T1, T2>> ensureCompatibility(TypeSerializerConfigSnapshot configSnapshot) {
+			if (configSnapshot instanceof UnionSerializerConfigSnapshot) {
+				List<Tuple2<TypeSerializer<?>, TypeSerializerConfigSnapshot>> previousSerializersAndConfigs =
+					((UnionSerializerConfigSnapshot) configSnapshot).getNestedSerializersAndConfigs();
+
+				CompatibilityResult<T1> oneSerializerCompatResult = CompatibilityUtil.resolveCompatibilityResult(
+					previousSerializersAndConfigs.get(0).f0,
+					UnloadableDummyTypeSerializer.class,
+					previousSerializersAndConfigs.get(0).f1,
+					oneSerializer);
+
+				CompatibilityResult<T2> twoSerializerCompatResult = CompatibilityUtil.resolveCompatibilityResult(
+					previousSerializersAndConfigs.get(1).f0,
+					UnloadableDummyTypeSerializer.class,
+					previousSerializersAndConfigs.get(1).f1,
+					twoSerializer);
+
+				if (!oneSerializerCompatResult.isRequiresMigration() && !twoSerializerCompatResult.isRequiresMigration()) {
+					return CompatibilityResult.compatible();
+				} else if (oneSerializerCompatResult.getConvertDeserializer() != null && twoSerializerCompatResult.getConvertDeserializer() != null) {
+					return CompatibilityResult.requiresMigration(
+						new UnionSerializer<>(
+							new TypeDeserializerAdapter<>(oneSerializerCompatResult.getConvertDeserializer()),
+							new TypeDeserializerAdapter<>(twoSerializerCompatResult.getConvertDeserializer())));
+				}
+			}
+
+			return CompatibilityResult.requiresMigration();
+		}
+	}
+
+	/**
+	 * The {@link TypeSerializerConfigSnapshot} for the {@link UnionSerializer}.
+	 */
+	public static class UnionSerializerConfigSnapshot<T1, T2> extends CompositeTypeSerializerConfigSnapshot {
+
+		private static final int VERSION = 1;
+
+		/** This empty nullary constructor is required for deserializing the configuration. */
+		public UnionSerializerConfigSnapshot() {}
+
+		public UnionSerializerConfigSnapshot(TypeSerializer<T1> oneSerializer, TypeSerializer<T2> twoSerializer) {
+			super(oneSerializer, twoSerializer);
+		}
+
+		@Override
+		public int getVersion() {
+			return VERSION;
+		}
 	}
 
 	public static void runNexmarkDebug(StreamExecutionEnvironment env, ParameterTool params) throws Exception {
