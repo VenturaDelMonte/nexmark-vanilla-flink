@@ -401,9 +401,17 @@ public class NexmarkQuery8 {
 		@Override
 		public void invoke(Query8WindowOutput record, Context context) throws Exception {
 			long timeMillis = context.currentProcessingTime();
-			sinkLatencyPersonCreation.update(timeMillis - record.getPersonCreationTimestamp());
-			sinkLatencyWindowEviction.update(timeMillis - record.getWindowEvictingTimestamp());
-			sinkLatencyAuctionCreation.update(timeMillis - record.getAuctionCreationTimestamp());
+			if (record.getPersonId() > 0) {
+				long latency = timeMillis - record.getPersonCreationTimestamp();
+				if (latency < 60_000) {
+					sinkLatencyPersonCreation.update(latency);
+				}
+			} else {
+				long latency = timeMillis - record.getAuctionCreationTimestamp();
+				if (latency < 60_000) {
+					sinkLatencyAuctionCreation.update(latency);
+				}
+			}
 //			try {
 //				buffer.append(timeMillis);
 //				buffer.append(",");
@@ -587,18 +595,41 @@ public class NexmarkQuery8 {
 
 		private transient ValueState<NewPersonEvent0> activeUser;
 		private transient ListState<AuctionEvent0> matchingAuctions;
+		private transient long seenAuctions;
+
+		@Override
+		public void open(Configuration parameters) throws Exception {
+			super.open(parameters);
+			seenAuctions = 0L;
+		}
 
 		@Override
 		public void processElement(
-				TaggedUnion<NewPersonEvent0, AuctionEvent0> value,
+				TaggedUnion<NewPersonEvent0, AuctionEvent0> in,
 				Context ctx,
 				Collector<Query8WindowOutput> out) throws Exception {
-
-
-			if (value.isOne()) {
-				activeUser.update(value.getOne());
+			if (in.isOne()) {
+				NewPersonEvent0 p = in.getOne();
+				activeUser.update(p);
+				out.collect(new Query8WindowOutput(
+						0L,
+						p.timestamp,
+						p.ingestionTimestamp,
+						0L,
+						0L,
+						p.personId));
 			} else {
-				matchingAuctions.add(value.getTwo());
+				AuctionEvent0 a = in.getTwo();
+				matchingAuctions.add(a);
+				if (++seenAuctions % 100_000 == 0) {
+					out.collect(new Query8WindowOutput(
+							0L,
+							0L,
+							0L,
+							a.timestamp,
+							a.ingestionTimestamp,
+							-a.personId));
+				}
 			}
 
 		}
