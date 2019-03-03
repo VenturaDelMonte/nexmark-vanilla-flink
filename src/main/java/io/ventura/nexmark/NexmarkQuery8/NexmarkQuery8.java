@@ -382,7 +382,7 @@ public class NexmarkQuery8 {
 		}
 	}
 
-	private static final class NexmarkQuery8LatencyTrackingSink extends RichSinkFunction<Query8WindowOutput> implements WithMasterCheckpointHook<Void> {
+	private static final class NexmarkQuery8LatencyTrackingSink extends RichSinkFunction<Query8WindowOutput> {
 
 //		private transient StringBuilder buffer;
 		private transient Histogram sinkLatencyWindowEviction;
@@ -426,35 +426,6 @@ public class NexmarkQuery8 {
 //			} finally {
 //				buffer.setLength(0);
 //			}
-		}
-
-		@Override
-		public MasterTriggerRestoreHook<Void> createMasterTriggerRestoreHook() {
-			return new MasterTriggerRestoreHook<Void>() {
-				@Override
-				public String getIdentifier() {
-					return getRuntimeContext().getTaskNameWithSubtasks() + "#Hook";
-				}
-
-				@Nullable
-				@Override
-				public CompletableFuture<Void> triggerCheckpoint(long checkpointId, long timestamp, Executor executor) throws Exception {
-					return null;
-				}
-
-				@Override
-				public void restoreCheckpoint(long checkpointId, @Nullable Void checkpointData) throws Exception {
-
-				}
-
-
-
-				@Nullable
-				@Override
-				public SimpleVersionedSerializer<Void> createCheckpointDataSerializer() {
-					return null;
-				}
-			};
 		}
 	}
 
