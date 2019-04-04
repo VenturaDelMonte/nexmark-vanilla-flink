@@ -35,6 +35,7 @@ import org.apache.flink.metrics.HistogramStatistics;
 import org.apache.flink.runtime.checkpoint.MasterTriggerRestoreHook;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
+import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.checkpoint.WithMasterCheckpointHook;
@@ -448,9 +449,12 @@ public class NexmarkQuery8 {
 
 		Properties baseCfg = new Properties();
 
+
 		baseCfg.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServers);
 		baseCfg.setProperty(ConsumerConfig.RECEIVE_BUFFER_CONFIG, "" + (128 * 1024));
-		baseCfg.setProperty(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, "" + 8192);
+		baseCfg.setProperty(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, "8192");
+		baseCfg.setProperty("fetch.message.max.bytes", "" + (4 * 1024 * 1024));
+		baseCfg.setProperty("offsets.commit.timeout.ms", "60000");
 		baseCfg.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "im-job-vanilla");
 
 		env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
@@ -468,6 +472,7 @@ public class NexmarkQuery8 {
 		env.getConfig().enableObjectReuse();
 		env.setMaxParallelism(maxParallelism);
 		env.getConfig().setLatencyTrackingInterval(latencyTrackingInterval);
+		env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
 
 		env.getConfig().enableForceKryo();
 		env.getConfig().registerTypeWithKryoSerializer(AuctionEvent0.class, AuctionEvent0.AuctionEventKryoSerializer.class);

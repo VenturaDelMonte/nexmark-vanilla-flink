@@ -131,17 +131,17 @@ public class AuctionEvent0 implements Serializable {
 
 		@Override
 		public AuctionEvent0 read(Kryo kryo, Input input, Class<AuctionEvent0> aClass) {
-			Long timestamp = input.readLong();
+			long timestamp = input.readLong();
 			long auctionId = input.readLong();
 			long itemId = input.readLong();
 			String name = input.readString();
 			String descr = input.readString();
 			long personId = input.readLong();
-			Double initialPrice = input.readDouble();
-			Long start = input.readLong();
-			Long end = input.readLong();
-			Long categoryId = input.readLong();
-			Long ingestionTimestamp = input.readLong();
+			double initialPrice = input.readDouble();
+			long start = input.readLong();
+			long end = input.readLong();
+			long categoryId = input.readLong();
+			long ingestionTimestamp = input.readLong();
 
 			return new AuctionEvent0(timestamp, auctionId, name, descr, itemId, personId, initialPrice, categoryId, start, end, ingestionTimestamp);
 		}
