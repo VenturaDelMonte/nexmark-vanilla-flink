@@ -3,9 +3,15 @@ package io.ventura.nexmark.beans;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
+import io.ventura.nexmark.original.Cities;
+import io.ventura.nexmark.original.Countries;
+import io.ventura.nexmark.original.Emails;
+import io.ventura.nexmark.original.Firstnames;
+import io.ventura.nexmark.original.Lastnames;
 
 import javax.annotation.Nonnull;
 import java.io.Serializable;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class NewPersonEvent0 implements Serializable {
 
@@ -62,6 +68,18 @@ public class NewPersonEvent0 implements Serializable {
 		this.ingestionTimestamp = ingestionTimestamp;
 	}
 
+	public NewPersonEvent0(long personId, long timestamp, ThreadLocalRandom r) {
+		this.personId = personId;
+		this.ingestionTimestamp = this.timestamp = timestamp;
+		this.city = Cities.CITIES[r.nextInt(Cities.CITIES.length)];
+		this.country = Countries.COUNTRIES[r.nextInt(Countries.COUNTRIES.length)];
+		this.email = Emails.EMAILS[r.nextInt(Emails.NUM_EMAILS)];
+		this.name = Firstnames.FIRSTNAMES[r.nextInt(Firstnames.NUM_FIRSTNAMES)] + " " + Lastnames.LASTNAMES[r.nextInt(Lastnames.LASTNAMES.length)];
+		this.province = Emails.EMAILS[r.nextInt(Emails.NUM_EMAILS)];
+		this.homepage = Firstnames.FIRSTNAMES[r.nextInt(Firstnames.NUM_FIRSTNAMES)];
+		this.creditcard = "00000000000";
+	}
+
 	public String getName() {
 		return name;
 	}
@@ -92,6 +110,10 @@ public class NewPersonEvent0 implements Serializable {
 
 	public String getProvince() {
 		return province;
+	}
+
+	public String getZipcode() {
+		return zipcode;
 	}
 
 	public String getHomepage() {

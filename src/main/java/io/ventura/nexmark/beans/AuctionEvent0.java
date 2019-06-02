@@ -3,10 +3,12 @@ package io.ventura.nexmark.beans;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
+import io.ventura.nexmark.original.RandomStrings;
 
 import javax.annotation.Nonnegative;
 import javax.annotation.Nonnull;
 import java.io.Serializable;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Class needs public field with default, no-argument constructor to be serializable.
@@ -64,7 +66,15 @@ public class AuctionEvent0 implements Serializable {
         this.ingestionTimestamp = ingestionTimestamp;
     }
 
-    public Long getTimestamp() {
+	public AuctionEvent0(long auctionId, long matchingPerson, long timestamp, ThreadLocalRandom r) {
+		this.auctionId = auctionId;
+		this.personId = matchingPerson;
+		this.ingestionTimestamp = this.timestamp = timestamp;
+		this.name = new String(RandomStrings.RANDOM_STRINGS_NAME[r.nextInt(RandomStrings.RANDOM_STRINGS_NAME.length)]);
+		this.descr = new String(RandomStrings.RANDOM_STRINGS_DESCR[r.nextInt(RandomStrings.RANDOM_STRINGS_DESCR.length)]);
+	}
+
+	public Long getTimestamp() {
         return timestamp;
     }
 
@@ -131,17 +141,17 @@ public class AuctionEvent0 implements Serializable {
 
 		@Override
 		public AuctionEvent0 read(Kryo kryo, Input input, Class<AuctionEvent0> aClass) {
-			long timestamp = input.readLong();
+			Long timestamp = input.readLong();
 			long auctionId = input.readLong();
 			long itemId = input.readLong();
 			String name = input.readString();
 			String descr = input.readString();
 			long personId = input.readLong();
-			double initialPrice = input.readDouble();
-			long start = input.readLong();
-			long end = input.readLong();
-			long categoryId = input.readLong();
-			long ingestionTimestamp = input.readLong();
+			Double initialPrice = input.readDouble();
+			Long start = input.readLong();
+			Long end = input.readLong();
+			Long categoryId = input.readLong();
+			Long ingestionTimestamp = input.readLong();
 
 			return new AuctionEvent0(timestamp, auctionId, name, descr, itemId, personId, initialPrice, categoryId, start, end, ingestionTimestamp);
 		}
