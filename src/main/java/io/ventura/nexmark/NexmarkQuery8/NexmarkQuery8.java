@@ -567,6 +567,8 @@ public class NexmarkQuery8 {
 		private transient Histogram sinkLatencyAuctionCreation;
 		private transient Histogram sinkLatencyFlightTime;
 
+		private static final long LATENCY_THRESHOLD = 10L * 60L * 1000L;
+
 		@Override
 		public void open(Configuration parameters) throws Exception {
 			super.open(parameters);
@@ -582,12 +584,12 @@ public class NexmarkQuery8 {
 			long timeMillis = context.currentProcessingTime();
 			if ((record.getPersonId() > 0)) {
 				long latency = timeMillis - record.getPersonCreationTimestamp();
-				if (latency < 60_000) {
+				if (latency < LATENCY_THRESHOLD) {
 					sinkLatencyPersonCreation.update(latency);
 				}
 			} else {
 				long latency = timeMillis - record.getAuctionCreationTimestamp();
-				if (latency < 60_000) {
+				if (latency <= LATENCY_THRESHOLD) { // 5mins
 					sinkLatencyAuctionCreation.update(latency);
 					sinkLatencyFlightTime.update(timeMillis - record.getAuctionIngestionTimestamp());
 				}
