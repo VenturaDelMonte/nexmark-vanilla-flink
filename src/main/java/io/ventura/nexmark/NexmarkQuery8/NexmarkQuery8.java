@@ -684,21 +684,27 @@ public class NexmarkQuery8 {
 			final int auctionRate = params.getInt("auctionRate");
 
 
-			in1 = env.addSource(new NexmarkPersonSource(personToGenerate, personRate)).name("NewPersonsInputStream").setParallelism(sourceParallelism)
-			.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<NewPersonEvent0>(Time.seconds(1)) {
-					@Override
-					public long extractTimestamp(NewPersonEvent0 newPersonEvent) {
+			in1 = env
+					.addSource(new NexmarkPersonSource(personToGenerate, personRate)).name("NewPersonsInputStream").setParallelism(sourceParallelism)
+					.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<NewPersonEvent0>(Time.seconds(1)) {
+						@Override
+						public long extractTimestamp(NewPersonEvent0 newPersonEvent) {
 						return newPersonEvent.timestamp;
 					}
-			}).setParallelism(sourceParallelism).returns(TypeInformation.of(new TypeHint<NewPersonEvent0>() {}));
+					})
+					.setParallelism(sourceParallelism)
+					.returns(TypeInformation.of(new TypeHint<NewPersonEvent0>() {}));
 
-			in2 = env.addSource(new NexmarkAuctionSource(auctionsToGenerate, auctionRate)).name("AuctionEventInputStream").setParallelism(sourceParallelism)
-			.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<AuctionEvent0>(Time.seconds(1)) {
-				@Override
-				public long extractTimestamp(AuctionEvent0 auctionEvent) {
+			in2 = env
+					.addSource(new NexmarkAuctionSource(auctionsToGenerate, auctionRate)).name("AuctionEventInputStream").setParallelism(sourceParallelism)
+					.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<AuctionEvent0>(Time.seconds(1)) {
+						@Override
+						public long extractTimestamp(AuctionEvent0 auctionEvent) {
 					return auctionEvent.timestamp;
 				}
-			}).setParallelism(sourceParallelism).returns(TypeInformation.of(new TypeHint<AuctionEvent0>() {}));
+					})
+					.setParallelism(sourceParallelism)
+					.returns(TypeInformation.of(new TypeHint<AuctionEvent0>() {}));
 
 
 		} else {
@@ -715,27 +721,31 @@ public class NexmarkQuery8 {
 			kafkaSourcePersons.setStartFromEarliest();
 
 			in1 = env
-				.addSource(kafkaSourcePersons)
-				.name("NewPersonsInputStream").setParallelism(sourceParallelism)
-				.flatMap(new PersonsFlatMapper()).setParallelism(sourceParallelism)
-				.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<NewPersonEvent0>(Time.seconds(2)) {
-					@Override
-					public long extractTimestamp(NewPersonEvent0 newPersonEvent) {
-						return newPersonEvent.timestamp;
-					}
-				}).setParallelism(sourceParallelism).returns(TypeInformation.of(new TypeHint<NewPersonEvent0>() {}))
+					.addSource(kafkaSourcePersons)
+					.name("NewPersonsInputStream").setParallelism(sourceParallelism)
+					.flatMap(new PersonsFlatMapper()).setParallelism(sourceParallelism)
+//					.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<NewPersonEvent0>(Time.seconds(2)) {
+//						@Override
+//						public long extractTimestamp(NewPersonEvent0 newPersonEvent) {
+//							return newPersonEvent.timestamp;
+//						}
+//					})
+					.setParallelism(sourceParallelism)
+					.returns(TypeInformation.of(new TypeHint<NewPersonEvent0>() {}))
 			;
 
 			in2 = env
-				.addSource(kafkaSourceAuctions)
-				.name("AuctionEventInputStream").setParallelism(sourceParallelism)
-				.flatMap(new AuctionsFlatMapper()).setParallelism(sourceParallelism)
-				.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<AuctionEvent0>(Time.seconds(2)) {
-					@Override
-					public long extractTimestamp(AuctionEvent0 auctionEvent) {
-						return auctionEvent.timestamp;
-					}
-				}).setParallelism(sourceParallelism).returns(TypeInformation.of(new TypeHint<AuctionEvent0>() {}))
+					.addSource(kafkaSourceAuctions)
+					.name("AuctionEventInputStream").setParallelism(sourceParallelism)
+					.flatMap(new AuctionsFlatMapper()).setParallelism(sourceParallelism)
+//					.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<AuctionEvent0>(Time.seconds(2)) {
+//						@Override
+//						public long extractTimestamp(AuctionEvent0 auctionEvent) {
+//							return auctionEvent.timestamp;
+//						}
+//					})
+					.setParallelism(sourceParallelism)
+					.returns(TypeInformation.of(new TypeHint<AuctionEvent0>() {}))
 			;
 		}
 //		WindowAssigner<Object, TimeWindow> assigner = null;
