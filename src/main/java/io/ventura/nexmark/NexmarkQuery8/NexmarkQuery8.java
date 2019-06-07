@@ -65,17 +65,24 @@ import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer011;
 import org.apache.flink.streaming.util.serialization.KeyedDeserializationSchema;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.Preconditions;
+import org.apache.flink.util.ShutdownHookUtil;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -113,6 +120,33 @@ public class NexmarkQuery8 {
 		}
 
 
+	}
+
+
+	public static String readProperty(final String key, String def) {
+		if (key == null) {
+			throw new NullPointerException("key");
+		} else if (key.isEmpty()) {
+			throw new IllegalArgumentException("key must not be empty.");
+		} else {
+			String value = null;
+
+			try {
+				if (System.getSecurityManager() == null) {
+					value = System.getProperty(key);
+				} else {
+					value = (String) AccessController.doPrivileged(new PrivilegedAction<String>() {
+						public String run() {
+							return System.getProperty(key);
+						}
+					});
+				}
+			} catch (SecurityException var4) {
+				LOG.warn("Unable to retrieve a system property '{}'; default values will be used.", key, var4);
+			}
+
+			return value == null ? def : value;
+		}
 	}
 
 	private static final int HOT_SELLER_RATIO = 100;
@@ -545,17 +579,23 @@ public class NexmarkQuery8 {
 
 		@Override
 		public void update(long l) {
-			impl.addValue(l);
+			synchronized (impl) {
+				impl.addValue(l);
+			}
 		}
 
 		@Override
 		public long getCount() {
-			return impl.getN();
+			synchronized (impl) {
+				return impl.getN();
+			}
 		}
 
 		@Override
 		public HistogramStatistics getStatistics() {
-			return new SinkLatencyTrackingHistogramStatistics(impl);
+			synchronized (impl) {
+				return new SinkLatencyTrackingHistogramStatistics(impl);
+			}
 		}
 	}
 
@@ -563,20 +603,132 @@ public class NexmarkQuery8 {
 
 //		private transient StringBuilder buffer;
 //		private transient Histogram sinkLatencyWindowEviction;
-		private transient Histogram sinkLatencyPersonCreation;
-		private transient Histogram sinkLatencyAuctionCreation;
-		private transient Histogram sinkLatencyFlightTime;
+//		private transient Histogram sinkLatencyPersonCreation;
+//		private transient Histogram sinkLatencyAuctionCreation;
+//		private transient Histogram sinkLatencyFlightTime;
 
 		private static final long LATENCY_THRESHOLD = 10L * 60L * 1000L;
+
+		private transient SummaryStatistics sinkLatencyPersonCreation;
+		private transient SummaryStatistics sinkLatencyAuctionCreation;
+		private transient SummaryStatistics sinkLatencyFlightTime;
+
+		private transient BufferedWriter writer;
+
+		private transient StringBuffer stringBuffer;
+
+		private transient int index;
+
+		private transient Thread cleaningHelper;
+
+		private transient boolean logInit = false;
+
+		private transient int writtenSoFar = 0;
 
 		@Override
 		public void open(Configuration parameters) throws Exception {
 			super.open(parameters);
 //			buffer = new StringBuilder(256);
 //			sinkLatencyWindowEviction = getRuntimeContext().getMetricGroup().histogram("sinkLatencyWindowEviction", new SinkLatencyTrackingHistogram());
-			sinkLatencyPersonCreation = getRuntimeContext().getMetricGroup().histogram("sinkLatencyPersonCreation", new SinkLatencyTrackingHistogram());
-			sinkLatencyAuctionCreation = getRuntimeContext().getMetricGroup().histogram("sinkLatencyAuctionCreation", new SinkLatencyTrackingHistogram());
-			sinkLatencyFlightTime = getRuntimeContext().getMetricGroup().histogram("sinkLatencyFlightTime", new SinkLatencyTrackingHistogram());
+//			sinkLatencyPersonCreation = getRuntimeContext().getMetricGroup().histogram("sinkLatencyPersonCreation", new SinkLatencyTrackingHistogram());
+//			sinkLatencyAuctionCreation = getRuntimeContext().getMetricGroup().histogram("sinkLatencyAuctionCreation", new SinkLatencyTrackingHistogram());
+//			sinkLatencyFlightTime = getRuntimeContext().getMetricGroup().histogram("sinkLatencyFlightTime", new SinkLatencyTrackingHistogram());
+
+			this.sinkLatencyPersonCreation = new SummaryStatistics();
+			this.sinkLatencyAuctionCreation = new SummaryStatistics();
+			this.sinkLatencyFlightTime = new SummaryStatistics();
+			this.stringBuffer = new StringBuffer(2048);
+			this.index = getRuntimeContext().getIndexOfThisSubtask();
+
+			File logDir = new File(readProperty("flink.sink.csv.dir", null));
+
+			File logFile = new File(logDir, "latency_" + index + ".csv");
+
+			if (logFile.exists()) {
+				this.writer = new BufferedWriter(new FileWriter(logFile, true));
+				this.writer.write("\n");
+			} else {
+				this.writer = new BufferedWriter(new FileWriter(logFile, false));
+				stringBuffer.append("subtask,ts,personCount,auctionCount,flightTimeCount,personMean,auctionMean,flightTimeMean,personStd,auctionStd,flightTimeStd,personMin,auctionMin,flightTimeMin,personMax,auctionMax,flightTimeMax");
+				stringBuffer.append("\n");
+				writer.write(stringBuffer.toString());
+				writtenSoFar += stringBuffer.length() * 2;
+			}
+
+			cleaningHelper = ShutdownHookUtil.addShutdownHook(writer, getRuntimeContext().getTaskNameWithSubtasks(), LOG);
+
+			stringBuffer.setLength(0);
+			logInit = true;
+		}
+
+		@Override
+		public void close() throws Exception {
+			super.close();
+			if (logInit) {
+				updateCSV(System.currentTimeMillis());
+				writer.flush();
+				writer.close();
+			}
+
+			sinkLatencyPersonCreation.clear();
+			sinkLatencyFlightTime.clear();
+			sinkLatencyAuctionCreation.clear();
+		}
+
+		private void updateCSV(long timestamp) throws IOException {
+			try {
+				stringBuffer.append(index);
+				stringBuffer.append(",");
+				stringBuffer.append(timestamp);
+				stringBuffer.append(",");
+
+				stringBuffer.append(sinkLatencyPersonCreation.getSum());
+				stringBuffer.append(",");
+				stringBuffer.append(sinkLatencyAuctionCreation.getSum());
+				stringBuffer.append(",");
+				stringBuffer.append(sinkLatencyFlightTime.getSum());
+				stringBuffer.append(",");
+
+				stringBuffer.append(sinkLatencyPersonCreation.getMean());
+				stringBuffer.append(",");
+				stringBuffer.append(sinkLatencyAuctionCreation.getMean());
+				stringBuffer.append(",");
+				stringBuffer.append(sinkLatencyFlightTime.getMean());
+				stringBuffer.append(",");
+
+				stringBuffer.append(sinkLatencyPersonCreation.getStandardDeviation());
+				stringBuffer.append(",");
+				stringBuffer.append(sinkLatencyAuctionCreation.getStandardDeviation());
+				stringBuffer.append(",");
+				stringBuffer.append(sinkLatencyFlightTime.getStandardDeviation());
+				stringBuffer.append(",");
+
+				stringBuffer.append(sinkLatencyPersonCreation.getMin());
+				stringBuffer.append(",");
+				stringBuffer.append(sinkLatencyAuctionCreation.getMin());
+				stringBuffer.append(",");
+				stringBuffer.append(sinkLatencyFlightTime.getMin());
+				stringBuffer.append(",");
+
+				stringBuffer.append(sinkLatencyPersonCreation.getMax());
+				stringBuffer.append(",");
+				stringBuffer.append(sinkLatencyAuctionCreation.getMax());
+				stringBuffer.append(",");
+				stringBuffer.append(sinkLatencyFlightTime.getMax());
+
+				stringBuffer.append("\n");
+				
+				writer.write(stringBuffer.toString());
+
+				writtenSoFar += stringBuffer.length() * 2;
+				if (writtenSoFar >= (8 * 1024 * 1024)) {
+					writer.flush();
+					writtenSoFar = 0;
+				}
+
+			} finally {
+				stringBuffer.setLength(0);
+			}
 		}
 
 		@Override
@@ -585,13 +737,14 @@ public class NexmarkQuery8 {
 			if ((record.getPersonId() > 0)) {
 				long latency = timeMillis - record.getPersonCreationTimestamp();
 				if (latency < LATENCY_THRESHOLD) {
-					sinkLatencyPersonCreation.update(latency);
+					sinkLatencyPersonCreation.addValue(latency);
 				}
 			} else {
 				long latency = timeMillis - record.getAuctionCreationTimestamp();
-				if (latency <= LATENCY_THRESHOLD) { // 5mins
-					sinkLatencyAuctionCreation.update(latency);
-					sinkLatencyFlightTime.update(timeMillis - record.getAuctionIngestionTimestamp());
+				if (latency <= LATENCY_THRESHOLD) {
+					sinkLatencyAuctionCreation.addValue(latency);
+					sinkLatencyFlightTime.addValue(timeMillis - record.getAuctionIngestionTimestamp());
+					updateCSV(timeMillis);
 				}
 			}
 //			sinkLatencyPersonCreation.update(timeMillis - record.getPersonCreationTimestamp());
@@ -1273,7 +1426,7 @@ public class NexmarkQuery8 {
 				runNexmark(env, params);
 			}
 			env.execute("Nexmark Query 8 (Kafka)");
-		} catch (Exception error) {
+		} catch (Throwable error) {
 			LOG.error("Error", error);
 		}
 

@@ -2,18 +2,18 @@ package io.ventura.nexmark.beans;
 
 public class Query8WindowOutput {
 
-    private final Long windowEvictingTimestamp;
-    private final Long personCreationTimestamp;
-    private final Long personIngestionTimestamp;
-    private final Long auctionCreationTimestamp;
-    private final Long auctionIngestionTimestamp;
+    private final long windowEvictingTimestamp;
+    private final long personCreationTimestamp;
+    private final long personIngestionTimestamp;
+    private final long auctionCreationTimestamp;
+    private final long auctionIngestionTimestamp;
     private final long personId;
 
-    public Query8WindowOutput(Long windowEvictingTimestamp,
-                              Long personCreationTimestamp,
-                              Long personIngestionTimestamp,
-                              Long auctionCreationTimestamp,
-                              Long auctionIngestionTimestamp,
+    public Query8WindowOutput(long windowEvictingTimestamp,
+                              long personCreationTimestamp,
+                              long personIngestionTimestamp,
+                              long auctionCreationTimestamp,
+                              long auctionIngestionTimestamp,
                               long personId) {
         this.windowEvictingTimestamp = windowEvictingTimestamp;
         this.personCreationTimestamp = personCreationTimestamp;
@@ -23,19 +23,19 @@ public class Query8WindowOutput {
         this.personId = personId;
     }
 
-    public Long getAuctionCreationTimestamp() {
+    public long getAuctionCreationTimestamp() {
         return auctionCreationTimestamp;
     }
 
-    public Long getPersonCreationTimestamp() {
+    public long getPersonCreationTimestamp() {
         return personCreationTimestamp;
     }
 
-    public Long getPersonIngestionTimestamp() {
+    public long getPersonIngestionTimestamp() {
         return personIngestionTimestamp;
     }
 
-    public Long getAuctionIngestionTimestamp() {
+    public long getAuctionIngestionTimestamp() {
         return auctionIngestionTimestamp;
     }
 
@@ -43,7 +43,7 @@ public class Query8WindowOutput {
         return personId;
     }
 
-    public Long getWindowEvictingTimestamp() {
+    public long getWindowEvictingTimestamp() {
         return windowEvictingTimestamp;
     }
 }
