@@ -82,6 +82,7 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
@@ -640,7 +641,7 @@ public class NexmarkQuery8 {
 			this.stringBuffer = new StringBuffer(2048);
 			this.index = getRuntimeContext().getIndexOfThisSubtask();
 
-			File logDir = new File(readProperty("flink.sink.csv.dir", null));
+			File logDir = new File(readProperty("flink.sink.csv.dir", readProperty("java.io.tmpdir", null)));
 
 			File logFile = new File(logDir, "latency_" + index + ".csv");
 
@@ -717,7 +718,7 @@ public class NexmarkQuery8 {
 				stringBuffer.append(sinkLatencyFlightTime.getMax());
 
 				stringBuffer.append("\n");
-				
+
 				writer.write(stringBuffer.toString());
 
 				writtenSoFar += stringBuffer.length() * 2;
@@ -810,6 +811,7 @@ public class NexmarkQuery8 {
 			env.getCheckpointConfig().setMaxConcurrentCheckpoints(concurrentCheckpoints);
 			env.getCheckpointConfig().setCheckpointTimeout(checkpointingTimeout);
 			env.getCheckpointConfig().setFailOnCheckpointingErrors(true);
+			env.getCheckpointConfig().enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
 		}
 		env.setParallelism(parallelism);
 		env.setMaxParallelism(maxParallelism);
@@ -828,6 +830,13 @@ public class NexmarkQuery8 {
 		DataStream<NewPersonEvent0> in1;
 		DataStream<AuctionEvent0> in2;
 
+		UUID src1 = new UUID(0, 1);
+		UUID src2 = new UUID(1, 1);
+		UUID map1 = new UUID(0, 2);
+		UUID map2 = new UUID(1, 2);
+		UUID join = new UUID(3, 1);
+		UUID sink = new UUID(3, 2);
+
 
 		if (autogen) {
 
@@ -838,25 +847,30 @@ public class NexmarkQuery8 {
 
 
 			in1 = env
-					.addSource(new NexmarkPersonSource(personToGenerate, personRate)).name("NewPersonsInputStream").setParallelism(sourceParallelism)
-					.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<NewPersonEvent0>(Time.seconds(1)) {
-						@Override
-						public long extractTimestamp(NewPersonEvent0 newPersonEvent) {
-						return newPersonEvent.timestamp;
-					}
-					})
+					.addSource(new NexmarkPersonSource(personToGenerate, personRate)).name("NewPersonsInputStream")
+					.uid(src1.toString())
 					.setParallelism(sourceParallelism)
+//					.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<NewPersonEvent0>(Time.seconds(1)) {
+//						@Override
+//						public long extractTimestamp(NewPersonEvent0 newPersonEvent) {
+//						return newPersonEvent.timestamp;
+//					}
+//					})
+//					.setParallelism(sourceParallelism)
 					.returns(TypeInformation.of(new TypeHint<NewPersonEvent0>() {}));
 
 			in2 = env
-					.addSource(new NexmarkAuctionSource(auctionsToGenerate, auctionRate)).name("AuctionEventInputStream").setParallelism(sourceParallelism)
-					.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<AuctionEvent0>(Time.seconds(1)) {
-						@Override
-						public long extractTimestamp(AuctionEvent0 auctionEvent) {
-					return auctionEvent.timestamp;
-				}
-					})
+					.addSource(new NexmarkAuctionSource(auctionsToGenerate, auctionRate))
+					.name("AuctionEventInputStream")
+					.uid(src2.toString())
 					.setParallelism(sourceParallelism)
+//					.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<AuctionEvent0>(Time.seconds(1)) {
+//						@Override
+//						public long extractTimestamp(AuctionEvent0 auctionEvent) {
+//					return auctionEvent.timestamp;
+//				}
+//					})
+//					.setParallelism(sourceParallelism)
 					.returns(TypeInformation.of(new TypeHint<AuctionEvent0>() {}));
 
 
@@ -875,8 +889,11 @@ public class NexmarkQuery8 {
 
 			in1 = env
 					.addSource(kafkaSourcePersons)
-					.name("NewPersonsInputStream").setParallelism(sourceParallelism)
-					.flatMap(new PersonsFlatMapper()).setParallelism(sourceParallelism)
+					.uid(src1.toString())
+					.name("NewPersonsInputStream")
+					.setParallelism(sourceParallelism)
+					.flatMap(new PersonsFlatMapper())
+					.setParallelism(sourceParallelism)
 //					.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<NewPersonEvent0>(Time.seconds(2)) {
 //						@Override
 //						public long extractTimestamp(NewPersonEvent0 newPersonEvent) {
@@ -884,13 +901,17 @@ public class NexmarkQuery8 {
 //						}
 //					})
 					.setParallelism(sourceParallelism)
+					.uid(map1.toString())
 					.returns(TypeInformation.of(new TypeHint<NewPersonEvent0>() {}))
 			;
 
 			in2 = env
 					.addSource(kafkaSourceAuctions)
-					.name("AuctionEventInputStream").setParallelism(sourceParallelism)
-					.flatMap(new AuctionsFlatMapper()).setParallelism(sourceParallelism)
+					.name("AuctionEventInputStream")
+					.uid(src2.toString())
+					.setParallelism(sourceParallelism)
+					.flatMap(new AuctionsFlatMapper())
+					.setParallelism(sourceParallelism)
 //					.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<AuctionEvent0>(Time.seconds(2)) {
 //						@Override
 //						public long extractTimestamp(AuctionEvent0 auctionEvent) {
@@ -898,6 +919,7 @@ public class NexmarkQuery8 {
 //						}
 //					})
 					.setParallelism(sourceParallelism)
+					.uid(map2.toString())
 					.returns(TypeInformation.of(new TypeHint<AuctionEvent0>() {}))
 			;
 		}
@@ -953,12 +975,14 @@ public class NexmarkQuery8 {
 				}
 			})
 			.process(function)
+			.uid(join.toString())
 			.name("WindowOperator(" + windowDuration + ")")
 			.setParallelism(windowParallelism)
 //			.setVirtualNodesNum(numOfVirtualNodes)
 //			.setReplicaSlotsHint(numOfReplicaSlotsHint)
 		.addSink(new NexmarkQuery8LatencyTrackingSink())
 			.name("Nexmark8Sink")
+			.uid(sink.toString())
 			.setParallelism(sinkParallelism);
 	}
 
