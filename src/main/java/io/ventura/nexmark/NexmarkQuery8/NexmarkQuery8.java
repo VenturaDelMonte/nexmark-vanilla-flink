@@ -995,6 +995,7 @@ public class NexmarkQuery8 {
 						0L,
 						0L,
 						p.personId));
+				ctx.timerService().registerEventTimeTimer(p.timestamp + 20_000);
 			} else {
 				AuctionEvent0 a = in.getTwo();
 				matchingAuctions.add(a);
@@ -1008,6 +1009,12 @@ public class NexmarkQuery8 {
 							-a.personId));
 				}
 			}
+		}
+
+		@Override
+		public void onTimer(long timestamp, OnTimerContext ctx, Collector<Query8WindowOutput> out) throws Exception {
+			super.onTimer(timestamp, ctx, out);
+			matchingAuctions.clear();
 		}
 
 		@Override
