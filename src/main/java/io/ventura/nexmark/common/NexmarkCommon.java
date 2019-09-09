@@ -4,11 +4,12 @@ public class NexmarkCommon {
 
 	public static final String PERSONS_TOPIC = "nexmark_persons";
 	public static final String AUCTIONS_TOPIC = "nexmark_auctions";
-
+	public static final String BIDS_TOPIC = "nexmark_bids";
 
 	public static final long PERSON_EVENT_RATIO = 1;
 	public static final long AUCTION_EVENT_RATIO = 4;
-	public static final long TOTAL_EVENT_RATIO = PERSON_EVENT_RATIO + AUCTION_EVENT_RATIO;
+	private static final long BID_EVENT_RATIO = 4;
+	public static final long TOTAL_EVENT_RATIO = PERSON_EVENT_RATIO + AUCTION_EVENT_RATIO + BID_EVENT_RATIO;
 
 	public static final int MAX_PARALLELISM = 50;
 
@@ -19,7 +20,10 @@ public class NexmarkCommon {
 	public static final long MAX_AUCTION_ID = 540_000_000_000L;
 
 	public static final int HOT_SELLER_RATIO = 100;
+	public static final int HOT_AUCTIONS_PROB = 85;
 
+
+	public static final int HOT_AUCTION_RATIO = 100;
 
 	static {
 

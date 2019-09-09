@@ -5,8 +5,10 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static io.ventura.nexmark.NexmarkQuery5.NexmarkQuery5.runNexmarkQ5;
 import static io.ventura.nexmark.NexmarkQuery8.NexmarkQuery8.runNexmarkQ8;
 import static io.ventura.nexmark.NexmarkQuery8.NexmarkQuery8.runNexmarkQ8Debug;
+import static io.ventura.nexmark.NexmarkQueryX.NexmarkQueryX.runNexmarkQX;
 
 public class Main {
 
@@ -26,6 +28,12 @@ public class Main {
 			} else if (params.has("q8")) {
 				runNexmarkQ8(env, params);
 				query = "Query 8";
+			} else if (params.has("q5")) {
+				query = "Query 5";
+				runNexmarkQ5(env, params);
+			} else if (params.has("qx")) {
+				query = "Query X";
+				runNexmarkQX(env, params);
 			} else {
 				throw new UnsupportedOperationException();
 			}

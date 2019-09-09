@@ -1,6 +1,6 @@
 package io.ventura.nexmark.source;
 
-import io.ventura.nexmark.beans.AuctionEvent0;
+import io.ventura.nexmark.beans.BidEvent0;
 import io.ventura.nexmark.common.NexmarkCommon;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.shaded.guava18.com.google.common.util.concurrent.RateLimiter;
@@ -8,7 +8,8 @@ import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunctio
 
 import java.util.concurrent.ThreadLocalRandom;
 
-public class NexmarkAuctionSource extends RichParallelSourceFunction<AuctionEvent0> {
+public class NexmarkBidSource extends RichParallelSourceFunction<BidEvent0> {
+
 
 	private final long recordsToGenerate, recordsPerSecond;
 	private long minAuctionId;
@@ -18,7 +19,7 @@ public class NexmarkAuctionSource extends RichParallelSourceFunction<AuctionEven
 
 	private final int MINI_BATCH = 5;
 
-	public NexmarkAuctionSource(long recordsToGenerate, int recordsPerSecond) {
+	public NexmarkBidSource(long recordsToGenerate, int recordsPerSecond) {
 		this.recordsToGenerate = recordsToGenerate;
 		this.recordsPerSecond = recordsPerSecond;
 	}
@@ -31,40 +32,37 @@ public class NexmarkAuctionSource extends RichParallelSourceFunction<AuctionEven
 	}
 
 	@Override
-	public void run(SourceContext<AuctionEvent0> ctx) throws Exception {
+	public void run(SourceContext<BidEvent0> ctx) throws Exception {
 		ThreadLocalRandom r = ThreadLocalRandom.current();
 		final RateLimiter limiter = RateLimiter.create(recordsPerSecond);
 		for (long eventId = 0; eventId < recordsToGenerate && shouldContinue; ) {
 			long timestamp = System.currentTimeMillis();
 			synchronized (ctx.getCheckpointLock()) {
 				for (int i = 0; i < MINI_BATCH; i++, eventId++) {
+					long auction, bidder;
+
 					long epoch = eventId / NexmarkCommon.TOTAL_EVENT_RATIO;
 					long offset = eventId % NexmarkCommon.TOTAL_EVENT_RATIO;
-					if (offset < NexmarkCommon.PERSON_EVENT_RATIO) {
-						epoch--;
-						offset = NexmarkCommon.AUCTION_EVENT_RATIO - 1;
+
+					if (r.nextInt(100) > NexmarkCommon.HOT_AUCTIONS_PROB) {
+						auction = minAuctionId + (((epoch * NexmarkCommon.AUCTION_EVENT_RATIO + NexmarkCommon.AUCTION_EVENT_RATIO - 1) / NexmarkCommon.HOT_AUCTION_RATIO) * NexmarkCommon.HOT_AUCTION_RATIO);
 					} else {
-						offset = NexmarkCommon.AUCTION_EVENT_RATIO - 1;
+						long a = Math.max(0, epoch * NexmarkCommon.AUCTION_EVENT_RATIO + NexmarkCommon.AUCTION_EVENT_RATIO - 1 - 20_000);
+						long b = epoch * NexmarkCommon.AUCTION_EVENT_RATIO + NexmarkCommon.AUCTION_EVENT_RATIO - 1;
+						auction = minAuctionId + a + r.nextLong(b - a + 1 + 100);
 					}
-					long auctionId = minAuctionId + epoch * NexmarkCommon.AUCTION_EVENT_RATIO + offset;//r.nextLong(minAuctionId, maxAuctionId);
 
-					epoch = eventId / NexmarkCommon.TOTAL_EVENT_RATIO;
-					offset = eventId % NexmarkCommon.TOTAL_EVENT_RATIO;
-
-					if (offset >= NexmarkCommon.PERSON_EVENT_RATIO) {
-						offset = NexmarkCommon.PERSON_EVENT_RATIO - 1;
-					}
-					long matchingPerson;
 					if (r.nextInt(100) > 85) {
-						long personId = epoch * NexmarkCommon.PERSON_EVENT_RATIO + offset;
-						matchingPerson = minPersonId + (personId / NexmarkCommon.HOT_SELLER_RATIO) * NexmarkCommon.HOT_SELLER_RATIO;
+						long personId = epoch * NexmarkCommon.PERSON_EVENT_RATIO + NexmarkCommon.PERSON_EVENT_RATIO - 1;
+						bidder = minPersonId + (personId / NexmarkCommon.HOT_SELLER_RATIO) * NexmarkCommon.HOT_SELLER_RATIO;
 					} else {
-						long personId = epoch * NexmarkCommon.PERSON_EVENT_RATIO + offset + 1;
-						long activePersons = Math.min(personId, 20_000);
+						long personId = epoch * NexmarkCommon.PERSON_EVENT_RATIO + NexmarkCommon.PERSON_EVENT_RATIO - 1;
+						long activePersons = Math.min(personId, 60_000);
 						long n = r.nextLong(activePersons + 100);
-						matchingPerson = minPersonId + personId + activePersons - n;
+						bidder = minPersonId + personId + activePersons - n;
 					}
-					ctx.collect(new AuctionEvent0(auctionId, matchingPerson, timestamp, timestamp + 10_000, r));
+
+					ctx.collect(new BidEvent0(timestamp, timestamp, Math.abs(auction), Math.abs(bidder), -1, r.nextDouble(10_000_000)));
 				}
 			}
 			limiter.acquire(MINI_BATCH);

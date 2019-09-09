@@ -66,10 +66,12 @@ public class AuctionEvent0 implements Serializable {
         this.ingestionTimestamp = ingestionTimestamp;
     }
 
-	public AuctionEvent0(long auctionId, long matchingPerson, long timestamp, ThreadLocalRandom r) {
+	public AuctionEvent0(long auctionId, long matchingPerson, long timestamp, long end, ThreadLocalRandom r) {
 		this.auctionId = auctionId;
 		this.personId = matchingPerson;
 		this.ingestionTimestamp = this.timestamp = timestamp;
+		this.start = timestamp;
+		this.end = end;
 		this.name = new String(RandomStrings.RANDOM_STRINGS_NAME[r.nextInt(RandomStrings.RANDOM_STRINGS_NAME.length)]);
 		this.descr = new String(RandomStrings.RANDOM_STRINGS_DESCR[r.nextInt(RandomStrings.RANDOM_STRINGS_DESCR.length)]);
 	}
