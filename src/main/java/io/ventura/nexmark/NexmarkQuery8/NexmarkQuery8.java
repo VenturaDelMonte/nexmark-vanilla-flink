@@ -543,8 +543,8 @@ public class NexmarkQuery8 {
 			.flatMap(function)
 			.name("WindowOperator(" + windowDuration + ")")
 			.setParallelism(windowParallelism)
-			.setVirtualNodesNum(numOfVirtualNodes)
-			.setReplicaSlotsHint(numOfReplicaSlotsHint)
+//			.setVirtualNodesNum(numOfVirtualNodes)
+//			.setReplicaSlotsHint(numOfReplicaSlotsHint)
 		.addSink(new NexmarkQuery8LatencyTrackingSink())
 			.name("Nexmark8Sink")
 			.setParallelism(sinkParallelism);

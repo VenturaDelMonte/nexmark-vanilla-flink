@@ -249,8 +249,8 @@ public class NexmarkQueryX {
 				.window(EventTimeSessionWindows.withGap(Time.seconds(sessionDuration)))
 				.allowedLateness(Time.seconds(sessionAllowedLateness))
 				.apply(new SessionWindowUdf())
-				.setVirtualNodesNum(4)
-				.setReplicaSlotsHint(1)
+//				.setVirtualNodesNum(4)
+//				.setReplicaSlotsHint(1)
 				.setParallelism(windowParallelism);
 
 
@@ -278,8 +278,8 @@ public class NexmarkQueryX {
 					}
 				})
 				.process(new WinningBidsMapper())
-				.setVirtualNodesNum(4)
-				.setReplicaSlotsHint(4)
+//				.setVirtualNodesNum(4)
+//				.setReplicaSlotsHint(4)
 				.setParallelism(windowParallelism);;
 
 		// query 7 - highest bid
