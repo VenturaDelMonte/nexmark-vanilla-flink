@@ -62,6 +62,7 @@ public class NexmarkQuery5 {
 		final int parallelism = params.getInt("parallelism", 1);
 		final int maxParallelism = params.getInt("maxParallelism", 1024);
 		final int numOfVirtualNodes = params.getInt("numOfVirtualNodes", 4);
+		final int sinkStride = params.getInt("sinkStride", NexmarkQuery4LatencyTrackingSink.DEFAULT_STRIDE);
 
 		final boolean autogen = params.has("autogen");
 
@@ -169,19 +170,19 @@ public class NexmarkQuery5 {
 //				.window(TumblingEventTimeWindows.of(Time.seconds(windowDuration)))
 				.window(SlidingEventTimeWindows.of(Time.seconds(windowDuration), Time.seconds(windowSlide)))
 				.aggregate(new NexmarkQuery4Aggregator())
-//				.setReplicaSlotsHint(1)
-//				.setVirtualNodesNum(numOfVirtualNodes)
-				.name("Nexmark4Aggregator")
-				.uid(new UUID(0, 5).toString())
-				.setParallelism(windowParallelism)
-				.addSink(new NexmarkQuery4LatencyTrackingSink())
-				.name("Nexmark4Sink")
-				.setParallelism(sinkParallelism)
-				.uid(new UUID(0, 6).toString());
+					.name("Nexmark4Aggregator")
+					.uid(new UUID(0, 5).toString())
+					.setParallelism(windowParallelism)
+				.addSink(new NexmarkQuery4LatencyTrackingSink(sinkStride))
+					.name("Nexmark4Sink")
+					.setParallelism(sinkParallelism)
+					.uid(new UUID(0, 6).toString());
 
 	}
 
 	private static final class NexmarkQuery4LatencyTrackingSink extends RichSinkFunction<NexmarkQuery4Output> {
+
+		public static final int DEFAULT_STRIDE = 200_000;
 
 		private static final long LATENCY_THRESHOLD = 10L * 60L * 1000L;
 
@@ -201,6 +202,12 @@ public class NexmarkQuery5 {
 		private transient int writtenSoFar = 0;
 
 		private transient long seenSoFar = 0;
+
+		private final int stride;
+
+		public NexmarkQuery4LatencyTrackingSink(int stride) {
+			this.stride = stride;
+		}
 
 		@Override
 		public void open(Configuration parameters) throws Exception {
@@ -295,7 +302,7 @@ public class NexmarkQuery5 {
 
 		@Override
 		public void invoke(NexmarkQuery4Output record, Context context) throws Exception {
-			if (seenSoFar++ % 200_000 > 0) {
+			if (seenSoFar++ % stride > 0) {
 				return;
 			}
 			long timeMillis = context.currentProcessingTime();
