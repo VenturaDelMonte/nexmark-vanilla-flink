@@ -182,7 +182,7 @@ public class NexmarkQuery5 {
 
 	private static final class NexmarkQuery4LatencyTrackingSink extends RichSinkFunction<NexmarkQuery4Output> {
 
-		public static final int DEFAULT_STRIDE = 200_000;
+		public static final int DEFAULT_STRIDE = 1_00;
 
 		private static final long LATENCY_THRESHOLD = 10L * 60L * 1000L;
 
@@ -302,15 +302,14 @@ public class NexmarkQuery5 {
 
 		@Override
 		public void invoke(NexmarkQuery4Output record, Context context) throws Exception {
-			if (seenSoFar++ % stride > 0) {
-				return;
-			}
 			long timeMillis = context.currentProcessingTime();
 			long latency = timeMillis - record.lastTimestamp;
 			if (latency <= LATENCY_THRESHOLD) {
 				sinkLatencyBid.addValue(latency);
 				sinkLatencyFlightTime.addValue(timeMillis - record.lastIngestionTimestamp);
-				updateCSV(timeMillis);
+				if (seenSoFar++ % stride == 0) {
+					updateCSV(timeMillis);
+				}
 			}
 		}
 	}
