@@ -1,6 +1,8 @@
 package io.ventura.nexmark;
 
+import io.ventura.nexmark.NexmarkQuery5.NexmarkQuery5;
 import io.ventura.nexmark.NexmarkQuery8.NexmarkQuery8;
+import io.ventura.nexmark.NexmarkQueryX.NexmarkQueryX;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.ConfigConstants;
@@ -30,8 +32,8 @@ public class NexmarkSuite {
 	private static final Logger LOG = LoggerFactory.getLogger(NexmarkSuite.class);
 
 
-	private static final int numTaskManagers = 2;
-	private static final int slotsPerTaskManager = 4;
+	private static final int numTaskManagers = 4;
+	private static final int slotsPerTaskManager = 1;
 
 
 	private static TestingCluster cluster;
@@ -52,7 +54,11 @@ public class NexmarkSuite {
 		config.setInteger(WebOptions.PORT, 8081);
 
 		config.setString(CheckpointingOptions.STATE_BACKEND, "rocksdb");
-		config.setString(CheckpointingOptions.CHECKPOINTS_DIRECTORY, "file:///tmp/flink");
+		config.setString(CheckpointingOptions.CHECKPOINTS_DIRECTORY, "file://" + System.getProperty("java.io.tmpdir"));
+		config.setBoolean(CheckpointingOptions.LOCAL_RECOVERY, false);
+
+
+
 
 		cluster = new TestingCluster(config);
 		cluster.start();
@@ -71,6 +77,7 @@ public class NexmarkSuite {
 
 		Map<String, String> config = new HashMap<>();
 
+		config.put("autogen", "1");
 		config.put("personsInputSizeGb", "1");
 		config.put("desiredPersonsThroughputMb", "100");
 		//config.put("checkpointingInterval", "5000");
@@ -79,7 +86,37 @@ public class NexmarkSuite {
 
 		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-		NexmarkQuery8.runNexmarkDebug(env, params);
+		NexmarkQuery8.runNexmarkQ8Debug(env, params);
+
+		JobGraph jobGraph = env.getStreamGraph().getJobGraph();
+
+		FiniteDuration timeout = new FiniteDuration(10, TimeUnit.MINUTES);
+		Deadline deadline = timeout.fromNow();
+
+		cluster.getLeaderGateway(deadline.timeLeft());
+
+		cluster.submitJobAndWait(jobGraph, true);
+	}
+
+	@Test
+	public void runNexmarkQ8() throws Exception {
+
+		Map<String, String> config = new HashMap<>();
+
+		config.put("windowDuration", "500000");
+		config.put("checkpointingInterval", "60000");
+//		config.put("checkpointingTimeout", ""+(2*60*1000));
+		config.put("windowParallelism", "4");
+		config.put("sourceParallelism", "2");
+		config.put("minPauseBetweenCheckpoints", "10000");
+		config.put("sinkParallelism", "4");
+		config.put("autogen", "1");
+
+		ParameterTool params = ParameterTool.fromMap(config);
+
+		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+		NexmarkQuery8.runNexmarkQ8(env, params);
 
 		JobGraph jobGraph = env.getStreamGraph().getJobGraph();
 
@@ -92,21 +129,83 @@ public class NexmarkSuite {
 	}
 
 	@Test
-	public void runNexmarkFull() throws Exception {
+	public void runNexmarkQ5() throws Exception {
 
 		Map<String, String> config = new HashMap<>();
 
-		config.put("personsInputSizeGb", "1");
-		config.put("checkpointingInterval", "5000");
+		config.put("checkpointingInterval", "60000");
+//		config.put("checkpointingTimeout", ""+(2*60*1000));
 		config.put("windowParallelism", "4");
+		config.put("numOfVirtualNodes", "1");
 		config.put("sourceParallelism", "2");
+		config.put("minPauseBetweenCheckpoints", "10000");
+		config.put("sinkParallelism", "4");
+		config.put("autogen", "1");
+
+		ParameterTool params = ParameterTool.fromMap(config);
+
+		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+		NexmarkQuery5.runNexmarkQ5(env, params);
+
+		JobGraph jobGraph = env.getStreamGraph().getJobGraph();
+
+		FiniteDuration timeout = new FiniteDuration(10, TimeUnit.MINUTES);
+		Deadline deadline = timeout.fromNow();
+
+		ActorGateway jobManager = cluster.getLeaderGateway(deadline.timeLeft());
+
+		cluster.submitJobAndWait(jobGraph, true);
+	}
+
+	@Test
+	public void runNexmarkQ5Kafka() throws Exception {
+
+		Map<String, String> config = new HashMap<>();
+
+		config.put("checkpointingInterval", "60000");
+//		config.put("checkpointingTimeout", ""+(2*60*1000));
+		config.put("windowParallelism", "4");
+		config.put("numOfVirtualNodes", "1");
+		config.put("sourceParallelism", "2");
+		config.put("minPauseBetweenCheckpoints", "10000");
 		config.put("sinkParallelism", "4");
 
 		ParameterTool params = ParameterTool.fromMap(config);
 
 		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-		NexmarkQuery8.runNexmark(env, params);
+		NexmarkQuery5.runNexmarkQ5(env, params);
+
+		JobGraph jobGraph = env.getStreamGraph().getJobGraph();
+
+		FiniteDuration timeout = new FiniteDuration(10, TimeUnit.MINUTES);
+		Deadline deadline = timeout.fromNow();
+
+		ActorGateway jobManager = cluster.getLeaderGateway(deadline.timeLeft());
+
+		cluster.submitJobAndWait(jobGraph, true);
+	}
+
+	@Test
+	public void runNexmarkQX() throws Exception {
+
+		Map<String, String> config = new HashMap<>();
+
+		config.put("checkpointingInterval", "60000");
+//		config.put("checkpointingTimeout", ""+(2*60*1000));
+		config.put("windowParallelism", "4");
+		config.put("numOfVirtualNodes", "1");
+		config.put("sourceParallelism", "2");
+		config.put("minPauseBetweenCheckpoints", "10000");
+		config.put("sinkParallelism", "4");
+		config.put("autogen", "1");
+
+		ParameterTool params = ParameterTool.fromMap(config);
+
+		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+		NexmarkQueryX.runNexmarkQX(env, params);
 
 		JobGraph jobGraph = env.getStreamGraph().getJobGraph();
 

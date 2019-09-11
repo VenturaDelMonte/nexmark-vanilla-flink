@@ -613,6 +613,7 @@ public class NexmarkQuery8 {
 	}
 
 
+
 	public static void runNexmarkQ8Debug(StreamExecutionEnvironment env, ParameterTool params) throws Exception {
 
 		final int sourceParallelism = params.getInt("sourceParallelism", 1);
