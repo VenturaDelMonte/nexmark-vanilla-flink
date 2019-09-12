@@ -52,7 +52,7 @@ public class NexmarkQuery5 {
 		final int sourceParallelism = params.getInt("sourceParallelism", 1);
 		final int windowParallelism = params.getInt("windowParallelism", 1);
 		final int windowDuration = params.getInt("windowDuration", 2);
-		final int windowSlide = params.getInt("windowSlide", 2);
+		final int windowSlide = params.getInt("windowSlide", 1);
 		final int sinkParallelism = params.getInt("sinkParallelism", windowParallelism);
 
 		final int checkpointingInterval = params.getInt("checkpointingInterval", 0);
@@ -169,8 +169,8 @@ public class NexmarkQuery5 {
 						return e.auctionId;
 					}
 				})
-				.window(TumblingEventTimeWindows.of(Time.seconds(windowDuration)))
-//				.window(SlidingEventTimeWindows.of(Time.seconds(windowDuration), Time.seconds(windowSlide)))
+//				.window(TumblingEventTimeWindows.of(Time.seconds(windowDuration)))
+				.window(SlidingEventTimeWindows.of(Time.seconds(windowDuration), Time.seconds(windowSlide)))
 				.aggregate(new NexmarkQuery4Aggregator())
 					.name("Nexmark4Aggregator")
 					.uid(new UUID(0, 5).toString())
