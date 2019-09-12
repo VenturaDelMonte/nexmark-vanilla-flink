@@ -10,24 +10,33 @@ import io.ventura.nexmark.source.NexmarkBidSource;
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
+import org.apache.flink.api.common.state.MapState;
+import org.apache.flink.api.common.state.MapStateDescriptor;
+import org.apache.flink.api.common.state.ValueState;
+import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.metrics.Gauge;
+import org.apache.flink.runtime.state.FunctionInitializationContext;
+import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.shaded.guava18.com.google.common.util.concurrent.AtomicDouble;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
+import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
 import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer011;
+import org.apache.flink.util.Collector;
 import org.apache.flink.util.ShutdownHookUtil;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.slf4j.Logger;
@@ -38,9 +47,13 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Serializable;
+import java.nio.ByteBuffer;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 
 import static io.ventura.nexmark.NexmarkQuery8.NexmarkQuery8.readProperty;
 import static io.ventura.nexmark.common.NexmarkCommon.BIDS_TOPIC;
@@ -173,8 +186,9 @@ public class NexmarkQuery5 {
 					}
 				})
 //				.window(TumblingEventTimeWindows.of(Time.seconds(windowDuration)))
-				.window(SlidingEventTimeWindows.of(Time.seconds(windowDuration), Time.seconds(windowSlide)))
-				.aggregate(new NexmarkQuery4Aggregator())
+//				.window(SlidingEventTimeWindows.of(Time.seconds(windowDuration), Time.seconds(windowSlide)))
+//				.aggregate(new NexmarkQuery4Aggregator())
+				.process(new Aggregator())
 					.name("Nexmark4Aggregator")
 					.uid(new UUID(0, 5).toString())
 					.setParallelism(windowParallelism)
@@ -183,6 +197,52 @@ public class NexmarkQuery5 {
 					.setParallelism(sinkParallelism)
 					.uid(new UUID(0, 6).toString());
 
+	}
+
+
+	static class Aggregator extends KeyedProcessFunction<Long, BidEvent0, NexmarkQuery4Output> implements CheckpointedFunction {
+
+		private transient HashMap<Long, NexmarkQuery4Accumulator> temp;
+		private transient MapState<Long, NexmarkQuery4Accumulator> state;
+
+		@Override
+		public void snapshotState(FunctionSnapshotContext context) throws Exception {
+			state.clear();
+			for (Map.Entry<Long, NexmarkQuery4Accumulator> e : temp.entrySet()) {
+				state.put(e.getKey(), e.getValue());
+			}
+		}
+
+		@Override
+		public void initializeState(FunctionInitializationContext context) throws Exception {
+			state = context.getKeyedStateStore().getMapState(new MapStateDescriptor<>("state", TypeInformation.of(Long.class), TypeInformation.of(NexmarkQuery4Accumulator.class)));
+			temp = new HashMap<>(8192);
+		}
+
+		@Override
+		public void processElement(BidEvent0 value, Context ctx, Collector<NexmarkQuery4Output> out) throws Exception {
+			NexmarkQuery4Accumulator old = temp.compute(value.auctionId, new BiFunction<Long, NexmarkQuery4Accumulator, NexmarkQuery4Accumulator>() {
+				@Override
+				public NexmarkQuery4Accumulator apply(Long key, NexmarkQuery4Accumulator acc) {
+					if (acc == null) {
+						acc = new NexmarkQuery4Accumulator(key, value.bid, value.timestamp, value.ingestionTimestamp);
+					} else {
+						acc.add(value);
+					}
+					return acc;
+				}
+			});
+			if (old == null || old.count == 1) {
+				ctx.timerService().registerEventTimeTimer(20_000);
+			}
+		}
+
+		@Override
+		public void onTimer(long timestamp, OnTimerContext ctx, Collector<NexmarkQuery4Output> out) throws Exception {
+			super.onTimer(timestamp, ctx, out);
+
+			out.collect(temp.remove(ctx.getCurrentKey()).toOutput());
+		}
 	}
 
 	private static final class NexmarkQuery4LatencyTrackingSink extends RichSinkFunction<NexmarkQuery4Output> implements Gauge<Double> {
@@ -384,12 +444,14 @@ public class NexmarkQuery5 {
 		public long lastIngestionTimestamp = 0;
 		public long lastTimestamp = 0;
 		public double maxPrice = 0;
+		public long count = 1;
 
 		public NexmarkQuery4Accumulator(long id, double maxPrice, long ts, long lastTs) {
 			this.auction = id;
 			this.maxPrice = maxPrice;
 			this.lastTimestamp = ts;
 			this.lastIngestionTimestamp = lastTs;
+
 		}
 
 		public NexmarkQuery4Accumulator add(BidEvent0 e) {
@@ -401,6 +463,7 @@ public class NexmarkQuery5 {
 				lastTimestamp = e.timestamp;
 				lastIngestionTimestamp = e.ingestionTimestamp;
 			}
+			count++;
 			return this;
 		}
 
