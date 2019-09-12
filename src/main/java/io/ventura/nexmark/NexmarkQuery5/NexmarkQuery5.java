@@ -375,8 +375,8 @@ public class NexmarkQuery5 {
 		public NexmarkQuery4Accumulator add(BidEvent0 e) {
 			maxPrice = Math.max(maxPrice, e.bid);
 			auction = e.auctionId;
-			lastIngestionTimestamp = Math.max(lastIngestionTimestamp, e.ingestionTimestamp);
-			lastTimestamp = Math.max(lastTimestamp, e.timestamp);
+			lastIngestionTimestamp = e.ingestionTimestamp;
+			lastTimestamp = e.timestamp;
 			return this;
 		}
 
@@ -398,8 +398,8 @@ public class NexmarkQuery5 {
 		public long lastTimestamp = 0;
 
 		public NexmarkQuery4Output(long timestamp, long ingestionTimestamp) {
-			this.lastIngestionTimestamp = lastTimestamp;
-			this.lastTimestamp = timestamp;
+			this.lastIngestionTimestamp = timestamp;
+			this.lastTimestamp = ingestionTimestamp;
 		}
 	}
 }
