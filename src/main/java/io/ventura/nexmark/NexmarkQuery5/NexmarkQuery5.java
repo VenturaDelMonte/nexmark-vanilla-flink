@@ -15,6 +15,8 @@ import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.metrics.Gauge;
+import org.apache.flink.shaded.guava18.com.google.common.util.concurrent.AtomicDouble;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -38,6 +40,7 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.ventura.nexmark.NexmarkQuery8.NexmarkQuery8.readProperty;
 import static io.ventura.nexmark.common.NexmarkCommon.BIDS_TOPIC;
@@ -182,7 +185,7 @@ public class NexmarkQuery5 {
 
 	}
 
-	private static final class NexmarkQuery4LatencyTrackingSink extends RichSinkFunction<NexmarkQuery4Output> {
+	private static final class NexmarkQuery4LatencyTrackingSink extends RichSinkFunction<NexmarkQuery4Output> implements Gauge<Double> {
 
 		public static final int DEFAULT_STRIDE = 1;
 
@@ -206,6 +209,8 @@ public class NexmarkQuery5 {
 		private transient long seenSoFar = 0;
 
 		private final int stride;
+
+		private transient AtomicInteger latency;
 
 		public NexmarkQuery4LatencyTrackingSink(int stride) {
 			this.stride = stride;
@@ -240,6 +245,10 @@ public class NexmarkQuery5 {
 			stringBuffer.setLength(0);
 			logInit = true;
 			seenSoFar = 0;
+
+			latency = new AtomicInteger(0);
+
+			getRuntimeContext().getMetricGroup().gauge("bidsLatency", this);
 		}
 
 		@Override
@@ -309,10 +318,16 @@ public class NexmarkQuery5 {
 			if (latency <= LATENCY_THRESHOLD) {
 				sinkLatencyBid.addValue(latency);
 				sinkLatencyFlightTime.addValue(timeMillis - record.lastIngestionTimestamp);
+				this.latency.lazySet((int) sinkLatencyBid.getMean());
 				if (seenSoFar++ % stride == 0) {
 					updateCSV(timeMillis);
 				}
 			}
+		}
+
+		@Override
+		public Double getValue() {
+			return (double) latency.get();
 		}
 	}
 
