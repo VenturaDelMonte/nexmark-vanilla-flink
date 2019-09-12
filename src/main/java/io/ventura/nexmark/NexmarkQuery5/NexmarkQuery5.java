@@ -192,6 +192,7 @@ public class NexmarkQuery5 {
 		private static final long LATENCY_THRESHOLD = 10L * 60L * 1000L;
 
 		private transient SummaryStatistics sinkLatencyBid;
+		private transient SummaryStatistics sinkLatencyWindow;
 		private transient SummaryStatistics sinkLatencyFlightTime;
 
 		private transient BufferedWriter writer;
@@ -234,7 +235,7 @@ public class NexmarkQuery5 {
 				this.writer.write("\n");
 			} else {
 				this.writer = new BufferedWriter(new FileWriter(logFile, false));
-				stringBuffer.append("subtask,ts,bidLatencyCount,flightTimeCount,bidLatencyMean,flightTimeMean,bidLatencyStd,flightTimeStd,bidLatencyMin,flightTimeMin,bidLatencyMax,flightTimeMax");
+				stringBuffer.append("subtask,ts,bidLatencyCount,flightTimeCount,bidLatencyMean,flightTimeMean,sinkLatencyWindow,bidLatencyStd,flightTimeStd,bidLatencyMin,flightTimeMin,bidLatencyMax,flightTimeMax");
 				stringBuffer.append("\n");
 				writer.write(stringBuffer.toString());
 				writtenSoFar += stringBuffer.length() * 2;
@@ -280,6 +281,8 @@ public class NexmarkQuery5 {
 				stringBuffer.append(",");
 				stringBuffer.append(sinkLatencyFlightTime.getMean());
 				stringBuffer.append(",");
+				stringBuffer.append(sinkLatencyWindow.getMean());
+				stringBuffer.append(",");
 
 				stringBuffer.append(sinkLatencyBid.getStandardDeviation());
 				stringBuffer.append(",");
@@ -318,6 +321,7 @@ public class NexmarkQuery5 {
 			if (latency <= LATENCY_THRESHOLD) {
 				sinkLatencyBid.addValue(latency);
 				sinkLatencyFlightTime.addValue(timeMillis - record.lastIngestionTimestamp);
+				sinkLatencyWindow.addValue(timeMillis - record.windowTriggeringTimestamp);
 				this.latency.lazySet((int) sinkLatencyBid.getMean());
 				if (seenSoFar++ % stride == 0) {
 					updateCSV(timeMillis);
@@ -411,10 +415,12 @@ public class NexmarkQuery5 {
 
 		public long lastIngestionTimestamp = 0;
 		public long lastTimestamp = 0;
+		public long windowTriggeringTimestamp = 0;
 
 		public NexmarkQuery4Output(long timestamp, long ingestionTimestamp) {
 			this.lastIngestionTimestamp = timestamp;
 			this.lastTimestamp = ingestionTimestamp;
+			this.windowTriggeringTimestamp = System.currentTimeMillis();
 		}
 	}
 }
