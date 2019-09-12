@@ -221,6 +221,7 @@ public class NexmarkQuery5 {
 		public void open(Configuration parameters) throws Exception {
 			super.open(parameters);
 
+			this.sinkLatencyWindow = new SummaryStatistics();
 			this.sinkLatencyBid = new SummaryStatistics();
 			this.sinkLatencyFlightTime = new SummaryStatistics();
 			this.stringBuffer = new StringBuffer(2048);
