@@ -395,8 +395,12 @@ public class NexmarkQuery5 {
 		public NexmarkQuery4Accumulator add(BidEvent0 e) {
 			maxPrice = Math.max(maxPrice, e.bid);
 			auction = e.auctionId;
-			lastIngestionTimestamp = e.ingestionTimestamp;
-			lastTimestamp = e.timestamp;
+//			lastIngestionTimestamp = e.ingestionTimestamp;
+//			lastTimestamp = e.timestamp;
+			if (lastTimestamp < e.timestamp) {
+				lastTimestamp = e.timestamp;
+				lastIngestionTimestamp = e.ingestionTimestamp;
+			}
 			return this;
 		}
 
