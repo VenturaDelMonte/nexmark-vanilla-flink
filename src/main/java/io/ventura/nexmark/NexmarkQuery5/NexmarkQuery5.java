@@ -23,6 +23,7 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
 import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
+import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer011;
 import org.apache.flink.util.ShutdownHookUtil;
@@ -50,7 +51,7 @@ public class NexmarkQuery5 {
 
 		final int sourceParallelism = params.getInt("sourceParallelism", 1);
 		final int windowParallelism = params.getInt("windowParallelism", 1);
-		final int windowDuration = params.getInt("windowDuration", 60);
+		final int windowDuration = params.getInt("windowDuration", 2);
 		final int windowSlide = params.getInt("windowSlide", 2);
 		final int sinkParallelism = params.getInt("sinkParallelism", windowParallelism);
 
@@ -81,6 +82,7 @@ public class NexmarkQuery5 {
 		baseCfg.setProperty(ConsumerConfig.CHECK_CRCS_CONFIG, "false");
 
 		env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
+		env.getConfig().setAutoWatermarkInterval(250);
 		env.setRestartStrategy(RestartStrategies.fallBackRestart());
 		if (checkpointingInterval > 0) {
 			env.enableCheckpointing(checkpointingInterval);
@@ -167,8 +169,8 @@ public class NexmarkQuery5 {
 						return e.auctionId;
 					}
 				})
-//				.window(TumblingEventTimeWindows.of(Time.seconds(windowDuration)))
-				.window(SlidingEventTimeWindows.of(Time.seconds(windowDuration), Time.seconds(windowSlide)))
+				.window(TumblingEventTimeWindows.of(Time.seconds(windowDuration)))
+//				.window(SlidingEventTimeWindows.of(Time.seconds(windowDuration), Time.seconds(windowSlide)))
 				.aggregate(new NexmarkQuery4Aggregator())
 					.name("Nexmark4Aggregator")
 					.uid(new UUID(0, 5).toString())
@@ -182,7 +184,7 @@ public class NexmarkQuery5 {
 
 	private static final class NexmarkQuery4LatencyTrackingSink extends RichSinkFunction<NexmarkQuery4Output> {
 
-		public static final int DEFAULT_STRIDE = 1_00;
+		public static final int DEFAULT_STRIDE = 1;
 
 		private static final long LATENCY_THRESHOLD = 10L * 60L * 1000L;
 
