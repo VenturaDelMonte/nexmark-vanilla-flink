@@ -188,7 +188,7 @@ public class NexmarkQuery5 {
 //				.window(TumblingEventTimeWindows.of(Time.seconds(windowDuration)))
 //				.window(SlidingEventTimeWindows.of(Time.seconds(windowDuration), Time.seconds(windowSlide)))
 //				.aggregate(new NexmarkQuery4Aggregator())
-				.process(new Aggregator())
+				.process(new Aggregator(Time.seconds(windowDuration)))
 					.name("Nexmark4Aggregator")
 					.uid(new UUID(0, 5).toString())
 					.setParallelism(windowParallelism)
@@ -202,8 +202,14 @@ public class NexmarkQuery5 {
 
 	static class Aggregator extends KeyedProcessFunction<Long, BidEvent0, NexmarkQuery4Output> implements CheckpointedFunction {
 
+		private final long windowDuration;
+
 		private transient HashMap<Long, NexmarkQuery4Accumulator> temp;
 		private transient MapState<Long, NexmarkQuery4Accumulator> state;
+
+		public Aggregator(Time windowDuration) {
+			this.windowDuration = windowDuration.toMilliseconds();
+		}
 
 		@Override
 		public void snapshotState(FunctionSnapshotContext context) throws Exception {
@@ -233,7 +239,7 @@ public class NexmarkQuery5 {
 				}
 			});
 			if (old == null || old.count == 1) {
-				ctx.timerService().registerEventTimeTimer(20_000);
+				ctx.timerService().registerEventTimeTimer(windowDuration);
 			}
 		}
 
@@ -247,7 +253,7 @@ public class NexmarkQuery5 {
 
 	private static final class NexmarkQuery4LatencyTrackingSink extends RichSinkFunction<NexmarkQuery4Output> implements Gauge<Double> {
 
-		public static final int DEFAULT_STRIDE = 1;
+		public static final int DEFAULT_STRIDE = 2_000;
 
 		private static final long LATENCY_THRESHOLD = 10L * 60L * 1000L;
 
@@ -333,9 +339,9 @@ public class NexmarkQuery5 {
 				stringBuffer.append(timestamp);
 				stringBuffer.append(",");
 
-				stringBuffer.append(sinkLatencyBid.getSum());
+				stringBuffer.append(sinkLatencyBid.getN());
 				stringBuffer.append(",");
-				stringBuffer.append(sinkLatencyFlightTime.getSum());
+				stringBuffer.append(sinkLatencyFlightTime.getN());
 				stringBuffer.append(",");
 
 				stringBuffer.append(sinkLatencyBid.getMean());
