@@ -253,7 +253,7 @@ public class NexmarkQuery5 {
 
 	private static final class NexmarkQuery4LatencyTrackingSink extends RichSinkFunction<NexmarkQuery4Output> implements Gauge<Double> {
 
-		public static final int DEFAULT_STRIDE = 2_000;
+		public static final int DEFAULT_STRIDE = 5_00;
 
 		private static final long LATENCY_THRESHOLD = 10L * 60L * 1000L;
 
