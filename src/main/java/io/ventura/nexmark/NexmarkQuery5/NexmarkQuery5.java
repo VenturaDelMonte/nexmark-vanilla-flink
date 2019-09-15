@@ -253,12 +253,12 @@ public class NexmarkQuery5 {
 
 	private static final class NexmarkQuery4LatencyTrackingSink extends RichSinkFunction<NexmarkQuery4Output> implements Gauge<Double> {
 
-		public static final int DEFAULT_STRIDE = 5_00;
+		public static final int DEFAULT_STRIDE = 1;
 
 		private static final long LATENCY_THRESHOLD = 10L * 60L * 1000L;
 
 		private transient SummaryStatistics sinkLatencyBid;
-		private transient SummaryStatistics sinkLatencyWindow;
+//		private transient SummaryStatistics sinkLatencyWindow;
 		private transient SummaryStatistics sinkLatencyFlightTime;
 
 		private transient BufferedWriter writer;
@@ -287,7 +287,7 @@ public class NexmarkQuery5 {
 		public void open(Configuration parameters) throws Exception {
 			super.open(parameters);
 
-			this.sinkLatencyWindow = new SummaryStatistics();
+//			this.sinkLatencyWindow = new SummaryStatistics();
 			this.sinkLatencyBid = new SummaryStatistics();
 			this.sinkLatencyFlightTime = new SummaryStatistics();
 			this.stringBuffer = new StringBuffer(2048);
@@ -302,7 +302,8 @@ public class NexmarkQuery5 {
 				this.writer.write("\n");
 			} else {
 				this.writer = new BufferedWriter(new FileWriter(logFile, false));
-				stringBuffer.append("subtask,ts,bidLatencyCount,flightTimeCount,bidLatencyMean,flightTimeMean,sinkLatencyWindow,bidLatencyStd,flightTimeStd,bidLatencyMin,flightTimeMin,bidLatencyMax,flightTimeMax");
+				stringBuffer.append("subtask,ts,bidLatencyCount,flightTimeCount,bidLatencyMean,flightTimeMean,bidLatencyMin,flightTimeMin,bidLatencyMax,flightTimeMax");
+//				stringBuffer.append("subtask,ts,bidLatencyCount,flightTimeCount,bidLatencyMean,flightTimeMean,sinkLatencyWindow,bidLatencyStd,flightTimeStd,bidLatencyMin,flightTimeMin,bidLatencyMax,flightTimeMax");
 				stringBuffer.append("\n");
 				writer.write(stringBuffer.toString());
 				writtenSoFar += stringBuffer.length() * 2;
@@ -348,14 +349,13 @@ public class NexmarkQuery5 {
 				stringBuffer.append(",");
 				stringBuffer.append(sinkLatencyFlightTime.getMean());
 				stringBuffer.append(",");
-				stringBuffer.append(sinkLatencyWindow.getMean());
-				stringBuffer.append(",");
+//				stringBuffer.append(sinkLatencyWindow.getMean());
+//				stringBuffer.append(",");
 
-				stringBuffer.append(sinkLatencyBid.getStandardDeviation());
-				stringBuffer.append(",");
-				stringBuffer.append(sinkLatencyFlightTime.getStandardDeviation());
-				stringBuffer.append(",");
-
+//				stringBuffer.append(sinkLatencyBid.getStandardDeviation());
+//				stringBuffer.append(",");
+//				stringBuffer.append(sinkLatencyFlightTime.getStandardDeviation());
+//				stringBuffer.append(",");
 
 				stringBuffer.append(sinkLatencyBid.getMin());
 				stringBuffer.append(",");
@@ -388,7 +388,7 @@ public class NexmarkQuery5 {
 			if (latency <= LATENCY_THRESHOLD) {
 				sinkLatencyBid.addValue(latency);
 				sinkLatencyFlightTime.addValue(timeMillis - record.lastIngestionTimestamp);
-				sinkLatencyWindow.addValue(timeMillis - record.windowTriggeringTimestamp);
+//				sinkLatencyWindow.addValue(timeMillis - record.windowTriggeringTimestamp);
 				this.latency.lazySet((int) sinkLatencyBid.getMean());
 				if (seenSoFar++ % stride == 0) {
 					updateCSV(timeMillis);
