@@ -321,6 +321,9 @@ public class NexmarkQueryX {
 				.addSink(new WinningBidLatencyTracker())
 				.setParallelism(windowParallelism);
 
+		highestBid.addSink(new SessionLatencyTracker())
+				.setParallelism(windowParallelism);
+
 		// q8
 		{
 			JoinHelper.UnionTypeInfo<NewPersonEvent0, AuctionEvent0> unionTypePA = new JoinHelper.UnionTypeInfo<>(in1.getType(), in2.getType());
