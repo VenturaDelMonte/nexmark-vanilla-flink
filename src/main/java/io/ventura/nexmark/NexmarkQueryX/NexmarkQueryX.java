@@ -307,11 +307,12 @@ public class NexmarkQueryX {
 //				.setVirtualNodesNum(4)
 //				.setReplicaSlotsHint(1)
 				.setParallelism(windowParallelism)
-				.windowAll(TumblingEventTimeWindows.of(Time.seconds(10)))
-				.process(new HighestBidProcess())
+//				.windowAll(TumblingEventTimeWindows.of(Time.seconds(10)))
+//				.process(new HighestBidProcess())
 //				.setVirtualNodesNum(1)
-//				.setReplicaSlotsHint(1);
-		;
+//				.setReplicaSlotsHint(1)
+			;
+
 		// sinks
 		sessionLatency
 				.addSink(new SessionLatencyTracker())
@@ -319,6 +320,39 @@ public class NexmarkQueryX {
 		winningBids
 				.addSink(new WinningBidLatencyTracker())
 				.setParallelism(windowParallelism);
+
+		// q8
+		{
+			JoinHelper.UnionTypeInfo<NewPersonEvent0, AuctionEvent0> unionTypePA = new JoinHelper.UnionTypeInfo<>(in1.getType(), in2.getType());
+			DataStream<JoinHelper.TaggedUnion<NewPersonEvent0, AuctionEvent0>> taggedInputPA1 = in1
+				.map(new JoinHelper.Input1Tagger<NewPersonEvent0, AuctionEvent0>())
+				.setParallelism(in1.getParallelism())
+				.returns(unionTypePA);
+			DataStream<JoinHelper.TaggedUnion<NewPersonEvent0, AuctionEvent0>> taggedInputPA2 = in2
+					.map(new JoinHelper.Input2Tagger<NewPersonEvent0, AuctionEvent0>())
+					.setParallelism(in2.getParallelism())
+					.returns(unionTypePA);
+
+			DataStream<JoinHelper.TaggedUnion<NewPersonEvent0, AuctionEvent0>> unionStreamPA = taggedInputPA1.union(taggedInputPA2);
+
+			NexmarkQuery8.JoinUDF function = new NexmarkQuery8.JoinUDF();
+
+			unionStreamPA
+				.keyBy(new KeySelector<JoinHelper.TaggedUnion<NewPersonEvent0, AuctionEvent0>, Long>() {
+					@Override
+					public Long getKey(JoinHelper.TaggedUnion<NewPersonEvent0, AuctionEvent0> value) throws Exception {
+						return value.isOne() ? value.getOne().personId : value.getTwo().personId;
+					}
+				})
+				.flatMap(function)
+				.name("WindowOperator(" + windowDuration + ")")
+				.setParallelism(windowParallelism)
+//				.setVirtualNodesNum(numOfVirtualNodes)
+//				.setReplicaSlotsHint(numOfReplicaSlotsHint)
+			.addSink(new NexmarkQuery8.NexmarkQuery8LatencyTrackingSink())
+				.name("Nexmark8Sink")
+				.setParallelism(sinkParallelism);
+		}
 	}
 
 	public static class HighestBidProcess extends ProcessAllWindowFunction<SessionOutput, SessionOutput, TimeWindow>
