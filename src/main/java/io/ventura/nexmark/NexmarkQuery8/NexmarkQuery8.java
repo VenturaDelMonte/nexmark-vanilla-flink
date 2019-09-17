@@ -5,13 +5,21 @@ import io.ventura.nexmark.beans.NewPersonEvent0;
 import io.ventura.nexmark.beans.Query8WindowOutput;
 import io.ventura.nexmark.common.AuctionsFlatMapper;
 import io.ventura.nexmark.common.JoinHelper;
+import io.ventura.nexmark.common.NexmarkCommon;
 import io.ventura.nexmark.common.PersonsFlatMapper;
+import io.ventura.nexmark.original.Cities;
+import io.ventura.nexmark.original.Countries;
+import io.ventura.nexmark.original.Emails;
+import io.ventura.nexmark.original.Firstnames;
+import io.ventura.nexmark.original.Lastnames;
 import io.ventura.nexmark.source.AuctionsDeserializationSchema;
 import io.ventura.nexmark.source.NexmarkAuctionSource;
 import io.ventura.nexmark.source.NexmarkPersonSource;
 import io.ventura.nexmark.source.PersonDeserializationSchema;
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
+import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.functions.FlatMapFunction;
+import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.RichCoGroupFunction;
 import org.apache.flink.api.common.functions.RichFlatMapFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
@@ -21,27 +29,52 @@ import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.common.typeutils.CompatibilityResult;
+import org.apache.flink.api.common.typeutils.CompatibilityUtil;
+import org.apache.flink.api.common.typeutils.CompositeTypeSerializerConfigSnapshot;
+import org.apache.flink.api.common.typeutils.TypeDeserializerAdapter;
+import org.apache.flink.api.common.typeutils.TypeSerializer;
+import org.apache.flink.api.common.typeutils.TypeSerializerConfigSnapshot;
+import org.apache.flink.api.common.typeutils.UnloadableDummyTypeSerializer;
 import org.apache.flink.api.java.functions.KeySelector;
+import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.typeutils.TypeExtractor;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.core.memory.DataInputView;
+import org.apache.flink.core.memory.DataOutputView;
 import org.apache.flink.metrics.Histogram;
 import org.apache.flink.metrics.HistogramStatistics;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
+import org.apache.flink.shaded.guava18.com.google.common.util.concurrent.RateLimiter;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
+import org.apache.flink.streaming.api.datastream.CoGroupedStreams;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
+import org.apache.flink.streaming.api.functions.ProcessFunction;
+import org.apache.flink.streaming.api.functions.co.CoProcessFunction;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
+import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
+import org.apache.flink.streaming.api.windowing.assigners.DynamicEventTimeSessionWindows;
+import org.apache.flink.streaming.api.windowing.assigners.EventTimeSessionWindows;
+import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
+import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
+import org.apache.flink.streaming.api.windowing.assigners.WindowAssigner;
 import org.apache.flink.streaming.api.windowing.time.Time;
+import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer011;
+import org.apache.flink.streaming.util.serialization.KeyedDeserializationSchema;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.ShutdownHookUtil;
+import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,10 +83,16 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
+import java.util.Arrays;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Properties;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static io.ventura.nexmark.common.NexmarkCommon.AUCTIONS_TOPIC;
 import static io.ventura.nexmark.common.NexmarkCommon.PERSONS_TOPIC;
@@ -223,6 +262,12 @@ public class NexmarkQuery8 {
 
 		private transient int writtenSoFar = 0;
 
+		private final String name;
+
+		public NexmarkQuery8LatencyTrackingSink(String name) {
+			this.name = name;
+		}
+
 		@Override
 		public void open(Configuration parameters) throws Exception {
 			super.open(parameters);
@@ -239,15 +284,19 @@ public class NexmarkQuery8 {
 			this.index = getRuntimeContext().getIndexOfThisSubtask();
 
 			File logDir = new File(readProperty("flink.sink.csv.dir", System.getProperty("java.io.tmpdir")));
-
-			File logFile = new File(logDir, "latency_" + index + ".csv");
+			File logSubDir = new File(logDir, name + "_" + + index);
+			if (!logSubDir.exists()) {
+				logSubDir.mkdirs();
+			}
+			File logFile = new File(logSubDir, name + "_" + index + ".csv");
 
 			if (logFile.exists()) {
 				this.writer = new BufferedWriter(new FileWriter(logFile, true));
 				this.writer.write("\n");
 			} else {
 				this.writer = new BufferedWriter(new FileWriter(logFile, false));
-				stringBuffer.append("subtask,ts,personCount,auctionCount,flightTimeCount,personMean,auctionMean,flightTimeMean,personStd,auctionStd,flightTimeStd,personMin,auctionMin,flightTimeMin,personMax,auctionMax,flightTimeMax");
+				//stringBuffer.append("subtask,ts,personCount,auctionCount,flightTimeCount,personMean,auctionMean,flightTimeMean,personStd,auctionStd,flightTimeStd,personMin,auctionMin,flightTimeMin,personMax,auctionMax,flightTimeMax");
+				stringBuffer.append("subtask,ts,personCount,auctionCount,flightTimeCount,personMean,auctionMean,flightTimeMean,personMin,auctionMin,flightTimeMin,personMax,auctionMax,flightTimeMax");
 				stringBuffer.append("\n");
 				writer.write(stringBuffer.toString());
 				writtenSoFar += stringBuffer.length() * 2;
@@ -280,11 +329,11 @@ public class NexmarkQuery8 {
 				stringBuffer.append(timestamp);
 				stringBuffer.append(",");
 
-				stringBuffer.append(sinkLatencyPersonCreation.getSum());
+				stringBuffer.append(sinkLatencyPersonCreation.getN());
 				stringBuffer.append(",");
-				stringBuffer.append(sinkLatencyAuctionCreation.getSum());
+				stringBuffer.append(sinkLatencyAuctionCreation.getN());
 				stringBuffer.append(",");
-				stringBuffer.append(sinkLatencyFlightTime.getSum());
+				stringBuffer.append(sinkLatencyFlightTime.getN());
 				stringBuffer.append(",");
 
 				stringBuffer.append(sinkLatencyPersonCreation.getMean());
@@ -294,12 +343,12 @@ public class NexmarkQuery8 {
 				stringBuffer.append(sinkLatencyFlightTime.getMean());
 				stringBuffer.append(",");
 
-				stringBuffer.append(sinkLatencyPersonCreation.getStandardDeviation());
-				stringBuffer.append(",");
-				stringBuffer.append(sinkLatencyAuctionCreation.getStandardDeviation());
-				stringBuffer.append(",");
-				stringBuffer.append(sinkLatencyFlightTime.getStandardDeviation());
-				stringBuffer.append(",");
+//				stringBuffer.append(sinkLatencyPersonCreation.getStandardDeviation());
+//				stringBuffer.append(",");
+//				stringBuffer.append(sinkLatencyAuctionCreation.getStandardDeviation());
+//				stringBuffer.append(",");
+//				stringBuffer.append(sinkLatencyFlightTime.getStandardDeviation());
+//				stringBuffer.append(",");
 
 				stringBuffer.append(sinkLatencyPersonCreation.getMin());
 				stringBuffer.append(",");
@@ -545,7 +594,7 @@ public class NexmarkQuery8 {
 			.setParallelism(windowParallelism)
 //			.setVirtualNodesNum(numOfVirtualNodes)
 //			.setReplicaSlotsHint(numOfReplicaSlotsHint)
-		.addSink(new NexmarkQuery8LatencyTrackingSink())
+		.addSink(new NexmarkQuery8LatencyTrackingSink("large_join_q8"))
 			.name("Nexmark8Sink")
 			.setParallelism(sinkParallelism);
 	}
@@ -611,7 +660,6 @@ public class NexmarkQuery8 {
 			matchingAuctions = context.getKeyedStateStore().getListState(windowContentDescriptor);
 		}
 	}
-
 
 
 	public static void runNexmarkQ8Debug(StreamExecutionEnvironment env, ParameterTool params) throws Exception {

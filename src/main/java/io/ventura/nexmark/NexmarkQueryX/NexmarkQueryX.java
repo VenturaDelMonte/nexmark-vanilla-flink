@@ -315,13 +315,13 @@ public class NexmarkQueryX {
 
 		// sinks
 		sessionLatency
-				.addSink(new SessionLatencyTracker())
+				.addSink(new SessionLatencyTracker("latency_session_qx"))
 				.setParallelism(windowParallelism);
 		winningBids
-				.addSink(new WinningBidLatencyTracker())
+				.addSink(new WinningBidLatencyTracker("winning_bid_qx"))
 				.setParallelism(windowParallelism);
 
-		highestBid.addSink(new SessionLatencyTracker())
+		highestBid.addSink(new SessionLatencyTracker("highest_bid_qx"))
 				.setParallelism(windowParallelism);
 
 		// q8
@@ -352,7 +352,7 @@ public class NexmarkQueryX {
 				.setParallelism(windowParallelism)
 //				.setVirtualNodesNum(numOfVirtualNodes)
 //				.setReplicaSlotsHint(numOfReplicaSlotsHint)
-			.addSink(new NexmarkQuery8.NexmarkQuery8LatencyTrackingSink())
+			.addSink(new NexmarkQuery8.NexmarkQuery8LatencyTrackingSink("latency_large_join_qx"))
 				.name("Nexmark8Sink")
 				.setParallelism(sinkParallelism);
 		}
@@ -543,6 +543,12 @@ public class NexmarkQueryX {
 
 		private transient int writtenSoFar = 0;
 
+		private final String name;
+
+		public SessionLatencyTracker(String name) {
+			this.name = name;
+		}
+
 		@Override
 		public void open(Configuration parameters) throws Exception {
 			super.open(parameters);
@@ -553,8 +559,13 @@ public class NexmarkQueryX {
 			this.index = getRuntimeContext().getIndexOfThisSubtask();
 
 			File logDir = new File(readProperty("flink.sink.csv.dir", System.getProperty("java.io.tmpdir")));
+			File logSubDir = new File(logDir, name + "_" + + index);
 
-			File logFile = new File(logDir, "latency_session_qx_" + index + ".csv");
+			if (!logSubDir.exists()) {
+				logSubDir.mkdirs();
+			}
+
+			File logFile = new File(logSubDir, name + "_" + + index + ".csv");
 
 			if (logFile.exists()) {
 				this.writer = new BufferedWriter(new FileWriter(logFile, true));
@@ -664,6 +675,12 @@ public class NexmarkQueryX {
 
 		private transient int writtenSoFar = 0;
 
+		private final String name;
+
+		public WinningBidLatencyTracker(String name) {
+			this.name = name;
+		}
+
 		@Override
 		public void open(Configuration parameters) throws Exception {
 			super.open(parameters);
@@ -674,8 +691,11 @@ public class NexmarkQueryX {
 			this.index = getRuntimeContext().getIndexOfThisSubtask();
 
 			File logDir = new File(readProperty("flink.sink.csv.dir", System.getProperty("java.io.tmpdir")));
-
-			File logFile = new File(logDir, "latency_session_qx_" + index + ".csv");
+			File logSubDir = new File(logDir, name + "_" + index);
+			if (!logSubDir.exists()) {
+				logSubDir.mkdirs();
+			}
+			File logFile = new File(logSubDir, name + "_" + index + ".csv");
 
 			if (logFile.exists()) {
 				this.writer = new BufferedWriter(new FileWriter(logFile, true));
