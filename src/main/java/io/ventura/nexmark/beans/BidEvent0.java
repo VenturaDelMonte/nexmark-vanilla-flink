@@ -3,26 +3,42 @@ package io.ventura.nexmark.beans;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
+import org.apache.flink.shaded.netty4.io.netty.util.Recycler;
 
 import java.io.Serializable;
 
 public class BidEvent0 implements Serializable {
 
-    public final long ingestionTimestamp;
-    public final long timestamp;
-    public final long auctionId;
-    public final long personId;
-    public final long bidId;
-    public final double bid;
 
+    private static final Recycler<BidEvent0> BIDS_RECYCLER = new Recycler<BidEvent0>(512 * 1024 * 1024) {
+        @Override
+        protected BidEvent0 newObject(Handle handle) {
+            return new BidEvent0(handle);
+        }
+    };
 
-    public BidEvent0(long ingestionTimestamp, long timestamp, long auctionId, long personId, long bidId, double bid) {
+    public long ingestionTimestamp;
+    public long timestamp;
+    public long auctionId;
+    public long personId;
+    public long bidId;
+    public double bid;
+
+    private final Recycler.Handle handle;
+
+    public BidEvent0(Recycler.Handle handle) {
+        this.handle = handle;
+    }
+
+    public BidEvent0 init(long ingestionTimestamp, long timestamp, long auctionId, long personId, long bidId, double bid) {
         this.ingestionTimestamp = ingestionTimestamp;
         this.timestamp = timestamp;
         this.auctionId = auctionId;
         this.personId = personId;
         this.bidId = bidId;
         this.bid = bid;
+
+        return this;
     }
 
 
@@ -40,6 +56,8 @@ public class BidEvent0 implements Serializable {
             output.writeLong(bidEvent0.personId);
             output.writeLong(bidEvent0.bidId);
             output.writeDouble(bidEvent0.bid);
+
+            BIDS_RECYCLER.recycle(bidEvent0, bidEvent0.handle);
         }
 
         @Override
@@ -50,7 +68,7 @@ public class BidEvent0 implements Serializable {
             long personId = input.readLong();
             long bidId = input.readLong();
             double bid = input.readDouble();
-            return new BidEvent0(ingestionTimestamp, timestamp, auctionId, personId, bidId, bid);
+            return BIDS_RECYCLER.get().init(ingestionTimestamp, timestamp, auctionId, personId, bidId, bid);
         }
 
 

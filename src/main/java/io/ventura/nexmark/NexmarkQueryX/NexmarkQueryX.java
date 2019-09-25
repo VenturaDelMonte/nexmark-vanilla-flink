@@ -511,8 +511,8 @@ public class NexmarkQueryX {
 
 		private transient long seenSoFar;
 
-		private transient HashMap<Long, NexmarkQuery5.NexmarkQuery4Accumulator> temp;
-		private transient MapState<Long, NexmarkQuery5.NexmarkQuery4Accumulator> state;
+//		private transient HashMap<Long, NexmarkQuery5.NexmarkQuery4Accumulator> temp;
+//		private transient MapState<Long, NexmarkQuery5.NexmarkQuery4Accumulator> state;
 
 		private final long windowDuration = Time.hours(4).toMilliseconds();
 
