@@ -61,8 +61,8 @@ public class AuctionEvent0 implements Serializable {
         this.name = name;
         this.descr = descr;
         this.categoryId = categoryID;
-        this.start = timestamp;
-        this.end = timestamp;
+        this.start = start;
+        this.end = end;
         this.ingestionTimestamp = ingestionTimestamp;
     }
 

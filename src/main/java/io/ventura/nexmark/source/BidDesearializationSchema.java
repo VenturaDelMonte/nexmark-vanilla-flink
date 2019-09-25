@@ -1,5 +1,6 @@
 package io.ventura.nexmark.source;
 
+import io.ventura.nexmark.beans.AuctionEvent0;
 import io.ventura.nexmark.beans.BidEvent0;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
@@ -45,7 +46,6 @@ public class BidDesearializationSchema implements KeyedDeserializationSchema<Bid
 			long auctionId = wrapper.getLong();
 			double price = wrapper.getDouble();
 			long timestamp = wrapper.getLong();
-			
 
 			data[i] = new BidEvent0(ingestionTimestamp, timestamp, auctionId, bidderId, -1, price);
 		}
