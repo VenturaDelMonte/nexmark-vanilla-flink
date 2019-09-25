@@ -15,9 +15,8 @@ public class BidDesearializationSchema implements KeyedDeserializationSchema<Bid
 
 	private boolean isPartitionConsumed = false;
 
-	private final static int BID_RECORD_SIZE = 8 + 8 + 8 + 8 + 64;
+	private final static int BID_RECORD_SIZE = 8 + 8 + 8 + 8;
 
-	private static byte[] DUMMY = new byte[64];
 
 	@Override
 	public BidEvent0[] deserialize(
@@ -46,7 +45,7 @@ public class BidDesearializationSchema implements KeyedDeserializationSchema<Bid
 			long auctionId = wrapper.getLong();
 			double price = wrapper.getDouble();
 			long timestamp = wrapper.getLong();
-			wrapper.get(DUMMY);
+			
 
 			data[i] = new BidEvent0(ingestionTimestamp, timestamp, auctionId, bidderId, -1, price);
 		}
