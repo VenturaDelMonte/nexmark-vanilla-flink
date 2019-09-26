@@ -690,37 +690,49 @@ public class NexmarkQueryX {
 		public void onTimer(long timestamp, OnTimerContext ctx, Collector<WinningBid> out) throws Exception {
 			super.onTimer(timestamp, ctx, out);
 
-			Long w = windowEnd.value();
-
-			if (w != null && timestamp > w) {
-				windowEnd.update(null);
-				bids.clear();
-				return;
-			}
-
-			long ts = Long.MIN_VALUE;
-			long ingestionTs = Long.MIN_VALUE;
-			for (SessionData e : state[0].get()) {
-				long tmp;
-				if ((tmp = e.getTimestamp()) > ts) {
-					ts = tmp;
-				}
-				if ((tmp = e.getIngestionTimestamp()) > ingestionTs) {
-					ingestionTs = tmp;
-				}
-			}
-			if (ts > 0) {
-				out.collect(new WinningBid(ctx.getCurrentKey(), ts, ingestionTs));
-				for (int i = 0; i < SESSIONS_COUNT; i++) {
-					state[i].clear();
-				}
-				inFlightAuction.update(null);
-			}
+//			Long w = windowEnd.value();
+//
+//			if (w != null && timestamp > w) {
+//				windowEnd.update(null);
+//				bids.clear();
+//				return;
+//			}
+//
+//			long ts = Long.MIN_VALUE;
+//			long ingestionTs = Long.MIN_VALUE;
+//			for (SessionData e : state[0].get()) {
+//				long tmp;
+//				if ((tmp = e.getTimestamp()) > ts) {
+//					ts = tmp;
+//				}
+//				if ((tmp = e.getIngestionTimestamp()) > ingestionTs) {
+//					ingestionTs = tmp;
+//				}
+//			}
+//			if (ts > 0) {
+//				out.collect(new WinningBid(ctx.getCurrentKey(), ts, ingestionTs));
+//				for (int i = 0; i < SESSIONS_COUNT; i++) {
+//					state[i].clear();
+//				}
+//				inFlightAuction.update(null);
+//			}
 		}
 
 		@Override
 		public void snapshotState(FunctionSnapshotContext context) throws Exception {
-
+			staging.forEach(new BiConsumer<Long, SessionData>() {
+				@Override
+				public void accept(Long key, SessionData s) {
+					for (int i = 0; i < SESSIONS_COUNT; i++) {
+						try {
+							state[i].add(s);
+						} catch (Exception e) {
+						}
+					}
+					s.recycle();
+				}
+			});
+			staging.clear();
 		}
 
 		@Override
