@@ -4,6 +4,7 @@ import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import io.ventura.nexmark.original.RandomStrings;
+import org.apache.flink.shaded.netty4.io.netty.util.Recycler;
 
 import javax.annotation.Nonnegative;
 import javax.annotation.Nonnull;
@@ -17,8 +18,16 @@ public class AuctionEvent0 implements Serializable {
 
 //    private static final Logger LOG = LoggerFactory.getLogger(AuctionEvent.class);
 
+	public static final Recycler<AuctionEvent0> AUCTIONS_RECYCLER = new Recycler<AuctionEvent0>(2 * 1024 * 1024) {
+		@Override
+		protected AuctionEvent0 newObject(Handle handle) {
+			return new AuctionEvent0(handle);
+		}
+	};
 
-    public long timestamp;
+	private final Recycler.Handle handle;
+
+	public long timestamp;
     public long auctionId;
     public long personId;
     public long itemId;
@@ -31,27 +40,23 @@ public class AuctionEvent0 implements Serializable {
     private String name;
     private String descr;
 
-    public AuctionEvent0() {
-//        LOG.debug("Created person event with default constructor");
+
+    public AuctionEvent0 init(long timestamp, long auctionId, String name, String descr, long itemId, long personId, double initialPrice, long categoryID, long start, long end) {
+        return init(timestamp, auctionId, name, descr, itemId, personId, initialPrice, categoryID, start, end, System.currentTimeMillis());
     }
 
-    public AuctionEvent0(long timestamp, long auctionId, String name, String descr, long itemId, long personId, double initialPrice, long categoryID, long start, long end) {
-        this(timestamp, auctionId, name, descr, itemId, personId, initialPrice, categoryID, start, end, System.currentTimeMillis());
-    }
-
-    public AuctionEvent0(
-    		@Nonnegative long timestamp,
-			@Nonnegative long auctionId,
-			@Nonnull String name,
-			@Nonnull String descr,
-			@Nonnegative long itemId,
-			@Nonnegative long personId,
-			@Nonnegative double initialPrice,
-			@Nonnegative long categoryID,
-			@Nonnegative long start,
-			@Nonnegative long end,
-			@Nonnegative long ingestionTimestamp) {
-//        LOG.debug("Created person event with auctionId {} and personId {}", auctionId, personId);
+    public AuctionEvent0 init(
+			long timestamp,
+			long auctionId,
+			String name,
+			String descr,
+			long itemId,
+			long personId,
+			double initialPrice,
+			long categoryID,
+			long start,
+			long end,
+			long ingestionTimestamp) {
 
         this.timestamp = timestamp;
         this.auctionId = auctionId;
@@ -64,9 +69,11 @@ public class AuctionEvent0 implements Serializable {
         this.start = start;
         this.end = end;
         this.ingestionTimestamp = ingestionTimestamp;
+
+        return this;
     }
 
-	public AuctionEvent0(long auctionId, long matchingPerson, long timestamp, long end, ThreadLocalRandom r) {
+	public AuctionEvent0 init(long auctionId, long matchingPerson, long timestamp, long end, ThreadLocalRandom r) {
 		this.auctionId = auctionId;
 		this.personId = matchingPerson;
 		this.ingestionTimestamp = this.timestamp = timestamp;
@@ -74,6 +81,12 @@ public class AuctionEvent0 implements Serializable {
 		this.end = end;
 		this.name = new String(RandomStrings.RANDOM_STRINGS_NAME[r.nextInt(RandomStrings.RANDOM_STRINGS_NAME.length)]);
 		this.descr = new String(RandomStrings.RANDOM_STRINGS_DESCR[r.nextInt(RandomStrings.RANDOM_STRINGS_DESCR.length)]);
+
+		return this;
+	}
+
+	public AuctionEvent0(Recycler.Handle handle) {
+		this.handle = handle;
 	}
 
 	public Long getTimestamp() {
@@ -139,6 +152,10 @@ public class AuctionEvent0 implements Serializable {
 			output.writeLong(event.end);
 			output.writeLong(event.categoryId);
 			output.writeLong(event.ingestionTimestamp);
+
+//			event.handle.recycle(event);
+
+			AUCTIONS_RECYCLER.recycle(event, event.handle);
 		}
 
 		@Override
@@ -155,7 +172,7 @@ public class AuctionEvent0 implements Serializable {
 			Long categoryId = input.readLong();
 			Long ingestionTimestamp = input.readLong();
 
-			return new AuctionEvent0(timestamp, auctionId, name, descr, itemId, personId, initialPrice, categoryId, start, end, ingestionTimestamp);
+			return AUCTIONS_RECYCLER.get().init(timestamp, auctionId, name, descr, itemId, personId, initialPrice, categoryId, start, end, ingestionTimestamp);
 		}
 }
 

@@ -64,7 +64,7 @@ public class NexmarkAuctionSource extends RichParallelSourceFunction<AuctionEven
 						long n = r.nextLong(activePersons + 100);
 						matchingPerson = minPersonId + personId + activePersons - n;
 					}
-					ctx.collect(new AuctionEvent0(auctionId, matchingPerson, timestamp, timestamp + 120_000, r));
+					ctx.collect(AuctionEvent0.AUCTIONS_RECYCLER.get().init(auctionId, matchingPerson, timestamp, timestamp + 10_000, r));
 				}
 			}
 			limiter.acquire(MINI_BATCH);

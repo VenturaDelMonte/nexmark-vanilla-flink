@@ -64,8 +64,8 @@ public class AuctionsDeserializationSchema implements KeyedDeserializationSchema
 			wrapper.get(tmp0);
 			wrapper.get(tmp1);
 			long ts = wrapper.getLong();
-//				Preconditions.checkArgument(ts > 0);
-			data[i] = new AuctionEvent0(
+
+			data[i] = AuctionEvent0.AUCTIONS_RECYCLER.get().init(
 					ts,
 					id,
 					new String(tmp0),

@@ -62,7 +62,7 @@ public class NexmarkBidSource extends RichParallelSourceFunction<BidEvent0> {
 						bidder = minPersonId + personId + activePersons - n;
 					}
 
-					ctx.collect(new BidEvent0(timestamp, timestamp, Math.abs(auction), Math.abs(bidder), -1, r.nextDouble(10_000_000)));
+					ctx.collect(BidEvent0.BIDS_RECYCLER.get().init(timestamp, timestamp, Math.abs(auction), Math.abs(bidder), -1, r.nextDouble(10_000_000)));
 				}
 			}
 			limiter.acquire(MINI_BATCH);
