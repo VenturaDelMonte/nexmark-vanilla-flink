@@ -9,11 +9,11 @@ import io.ventura.nexmark.source.BidDesearializationSchema;
 import io.ventura.nexmark.source.NexmarkBidSource;
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import org.apache.flink.api.common.functions.AggregateFunction;
+import org.apache.flink.api.common.functions.RichAggregateFunction;
+import org.apache.flink.api.common.functions.RichFlatMapFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.state.MapState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
-import org.apache.flink.api.common.state.ValueState;
-import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.functions.KeySelector;
@@ -22,7 +22,6 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.metrics.Gauge;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
-import org.apache.flink.shaded.guava18.com.google.common.util.concurrent.AtomicDouble;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
@@ -47,7 +46,6 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Serializable;
-import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -67,8 +65,8 @@ public class NexmarkQuery5 {
 
 		final int sourceParallelism = params.getInt("sourceParallelism", 1);
 		final int windowParallelism = params.getInt("windowParallelism", 1);
-		final int windowDuration = params.getInt("windowDuration", 2);
-		final int windowSlide = params.getInt("windowSlide", 1);
+		final int windowDuration = params.getInt("windowDuration", 60);
+		final int windowSlide = params.getInt("windowSlide", 2);
 		final int sinkParallelism = params.getInt("sinkParallelism", windowParallelism);
 
 		final int checkpointingInterval = params.getInt("checkpointingInterval", 0);
@@ -79,7 +77,6 @@ public class NexmarkQuery5 {
 		final int parallelism = params.getInt("parallelism", 1);
 		final int maxParallelism = params.getInt("maxParallelism", 1024);
 		final int numOfVirtualNodes = params.getInt("numOfVirtualNodes", 4);
-		final int sinkStride = params.getInt("sinkStride", NexmarkQuery4LatencyTrackingSink.DEFAULT_STRIDE);
 
 		final boolean autogen = params.has("autogen");
 
@@ -98,7 +95,6 @@ public class NexmarkQuery5 {
 		baseCfg.setProperty(ConsumerConfig.CHECK_CRCS_CONFIG, "false");
 
 		env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
-		env.getConfig().setAutoWatermarkInterval(250);
 		env.setRestartStrategy(RestartStrategies.fallBackRestart());
 		if (checkpointingInterval > 0) {
 			env.enableCheckpointing(checkpointingInterval);
@@ -185,17 +181,19 @@ public class NexmarkQuery5 {
 						return e.auctionId;
 					}
 				})
+				.process(new Aggregator(Time.seconds(windowDuration)))
 //				.window(TumblingEventTimeWindows.of(Time.seconds(windowDuration)))
 //				.window(SlidingEventTimeWindows.of(Time.seconds(windowDuration), Time.seconds(windowSlide)))
 //				.aggregate(new NexmarkQuery4Aggregator())
-				.process(new Aggregator(Time.seconds(windowDuration)))
-					.name("Nexmark4Aggregator")
-					.uid(new UUID(0, 5).toString())
-					.setParallelism(windowParallelism)
-				.addSink(new NexmarkQuery4LatencyTrackingSink(sinkStride))
-					.name("Nexmark4Sink")
-					.setParallelism(sinkParallelism)
-					.uid(new UUID(0, 6).toString());
+//				.setReplicaSlotsHint(1)
+//				.setVirtualNodesNum(numOfVirtualNodes)
+				.name("Nexmark4Aggregator")
+				.uid(new UUID(0, 5).toString())
+				.setParallelism(windowParallelism)
+				.addSink(new NexmarkQuery4LatencyTrackingSink("q5"))
+				.name("Nexmark4Sink")
+				.setParallelism(sinkParallelism)
+				.uid(new UUID(0, 6).toString());
 
 	}
 
@@ -251,9 +249,7 @@ public class NexmarkQuery5 {
 		}
 	}
 
-	private static final class NexmarkQuery4LatencyTrackingSink extends RichSinkFunction<NexmarkQuery4Output> implements Gauge<Double> {
-
-		public static final int DEFAULT_STRIDE = 1;
+	public static final class NexmarkQuery4LatencyTrackingSink extends RichSinkFunction<NexmarkQuery4Output> implements Gauge<Double> {
 
 		private static final long LATENCY_THRESHOLD = 10L * 60L * 1000L;
 
@@ -275,27 +271,29 @@ public class NexmarkQuery5 {
 
 		private transient long seenSoFar = 0;
 
-		private final int stride;
+		private final String name;
 
 		private transient AtomicInteger latency;
 
-		public NexmarkQuery4LatencyTrackingSink(int stride) {
-			this.stride = stride;
+		public NexmarkQuery4LatencyTrackingSink(String name){
+			this.name = name;
 		}
 
 		@Override
 		public void open(Configuration parameters) throws Exception {
 			super.open(parameters);
 
-//			this.sinkLatencyWindow = new SummaryStatistics();
 			this.sinkLatencyBid = new SummaryStatistics();
 			this.sinkLatencyFlightTime = new SummaryStatistics();
 			this.stringBuffer = new StringBuffer(2048);
 			this.index = getRuntimeContext().getIndexOfThisSubtask();
 
 			File logDir = new File(readProperty("flink.sink.csv.dir", System.getProperty("java.io.tmpdir")));
-
-			File logFile = new File(logDir, "latency_q5_" + index + ".csv");
+			File logSubDir = new File(logDir, name + "_" + index);
+			if (!logSubDir.exists()) {
+				logSubDir.mkdirs();
+			}
+			File logFile = new File(logSubDir, name + "_" + index + ".csv");
 
 			if (logFile.exists()) {
 				this.writer = new BufferedWriter(new FileWriter(logFile, true));
@@ -303,7 +301,6 @@ public class NexmarkQuery5 {
 			} else {
 				this.writer = new BufferedWriter(new FileWriter(logFile, false));
 				stringBuffer.append("subtask,ts,bidLatencyCount,flightTimeCount,bidLatencyMean,flightTimeMean,bidLatencyMin,flightTimeMin,bidLatencyMax,flightTimeMax");
-//				stringBuffer.append("subtask,ts,bidLatencyCount,flightTimeCount,bidLatencyMean,flightTimeMean,sinkLatencyWindow,bidLatencyStd,flightTimeStd,bidLatencyMin,flightTimeMin,bidLatencyMax,flightTimeMax");
 				stringBuffer.append("\n");
 				writer.write(stringBuffer.toString());
 				writtenSoFar += stringBuffer.length() * 2;
@@ -329,7 +326,7 @@ public class NexmarkQuery5 {
 				writer.close();
 			}
 
-			sinkLatencyFlightTime.clear();
+//			sinkLatencyFlightTime.clear();
 			sinkLatencyBid.clear();
 		}
 
@@ -356,6 +353,7 @@ public class NexmarkQuery5 {
 //				stringBuffer.append(",");
 //				stringBuffer.append(sinkLatencyFlightTime.getStandardDeviation());
 //				stringBuffer.append(",");
+
 
 				stringBuffer.append(sinkLatencyBid.getMin());
 				stringBuffer.append(",");
@@ -390,9 +388,7 @@ public class NexmarkQuery5 {
 				sinkLatencyFlightTime.addValue(timeMillis - record.lastIngestionTimestamp);
 //				sinkLatencyWindow.addValue(timeMillis - record.windowTriggeringTimestamp);
 				this.latency.lazySet((int) sinkLatencyBid.getMean());
-				if (seenSoFar++ % stride == 0) {
-					updateCSV(timeMillis);
-				}
+				updateCSV(timeMillis);
 			}
 		}
 
