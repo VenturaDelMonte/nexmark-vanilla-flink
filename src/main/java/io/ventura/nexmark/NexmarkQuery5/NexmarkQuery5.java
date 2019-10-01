@@ -239,6 +239,7 @@ public class NexmarkQuery5 {
 			if (old == null || old.count == 1) {
 				ctx.timerService().registerEventTimeTimer(windowDuration);
 			}
+			value.recycle();
 		}
 
 		@Override
