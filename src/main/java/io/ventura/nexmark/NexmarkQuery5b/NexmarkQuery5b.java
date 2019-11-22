@@ -63,7 +63,7 @@ public class NexmarkQuery5b {
 	private static final Logger LOG = LoggerFactory.getLogger(NexmarkQuery5b.class);
 
 
-	public static void runNexmarkQ5(StreamExecutionEnvironment env, ParameterTool params) throws Exception {
+	public static void runNexmarkQ5b(StreamExecutionEnvironment env, ParameterTool params) throws Exception {
 
 		final int sourceParallelism = params.getInt("sourceParallelism", 1);
 		final int windowParallelism = params.getInt("windowParallelism", 1);

@@ -242,7 +242,7 @@ public class NexmarkSuite {
 		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
 		GeneratorPipeline.runGenerator(env, params);
-		NexmarkQuery5b.runNexmarkQ5(env, params);
+		NexmarkQuery5b.runNexmarkQ5b(env, params);
 
 		JobGraph jobGraph = env.getStreamGraph().getJobGraph();
 

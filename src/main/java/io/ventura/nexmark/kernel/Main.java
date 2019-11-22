@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static io.ventura.nexmark.NexmarkQuery5.NexmarkQuery5.runNexmarkQ5;
+import static io.ventura.nexmark.NexmarkQuery5b.NexmarkQuery5b.runNexmarkQ5b;
 import static io.ventura.nexmark.NexmarkQuery8.NexmarkQuery8.runNexmarkQ8;
 import static io.ventura.nexmark.NexmarkQuery8.NexmarkQuery8.runNexmarkQ8Debug;
 import static io.ventura.nexmark.NexmarkQueryX.NexmarkQueryX.runNexmarkQX;
@@ -35,9 +36,12 @@ public class Main {
 			} else if (params.has("qx")) {
 				query = "Query X";
 				runNexmarkQX(env, params);
-			} else if (params.has("qx")) {
+			} else if (params.has("q0")) {
 				query = "Generator";
 				runGenerator(env, params);
+			} else if (params.has("q5b")) {
+				query = "Query 5b";
+				runNexmarkQ5b(env, params);
 			} else {
 				throw new UnsupportedOperationException();
 			}
