@@ -137,6 +137,7 @@ public class NexmarkQuery5b {
 						}
 					}
 				})
+				.setParallelism(sourceParallelism)
 				.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<NexmarkEvent.BidEvent>(Time.seconds(2)) {
 						@Override
 						public long extractTimestamp(NexmarkEvent.BidEvent e) {
@@ -144,6 +145,7 @@ public class NexmarkQuery5b {
 						}
 					}
 				)
+				.setParallelism(sourceParallelism)
 				.keyBy(new KeySelector<NexmarkEvent.BidEvent, Long>() {
 					@Override
 					public Long getKey(NexmarkEvent.BidEvent value) throws Exception {
