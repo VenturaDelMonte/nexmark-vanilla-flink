@@ -25,7 +25,7 @@ public class AuctionEvent0 implements Serializable {
 		}
 	};
 
-	private final Recycler.Handle handle;
+	public final Recycler.Handle handle;
 
 	public long timestamp;
     public long auctionId;
@@ -37,8 +37,8 @@ public class AuctionEvent0 implements Serializable {
     public long categoryId;
     public long ingestionTimestamp;
 
-    private String name;
-    private String descr;
+    public String name;
+    public String descr;
 
 
     public AuctionEvent0 init(long timestamp, long auctionId, String name, String descr, long itemId, long personId, double initialPrice, long categoryID, long start, long end) {
@@ -160,7 +160,7 @@ public class AuctionEvent0 implements Serializable {
 
 		@Override
 		public AuctionEvent0 read(Kryo kryo, Input input, Class<AuctionEvent0> aClass) {
-			Long timestamp = input.readLong();
+			long timestamp = input.readLong();
 			long auctionId = input.readLong();
 			long itemId = input.readLong();
 			String name = input.readString();

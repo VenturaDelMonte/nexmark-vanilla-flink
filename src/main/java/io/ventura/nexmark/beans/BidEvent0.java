@@ -28,7 +28,7 @@ public class BidEvent0 implements Serializable {
 
 	private transient volatile int refCnt;
 
-	private final Recycler.Handle handle;
+	public final Recycler.Handle handle;
 
 	public BidEvent0(Recycler.Handle handle) {
 		this.handle = handle;

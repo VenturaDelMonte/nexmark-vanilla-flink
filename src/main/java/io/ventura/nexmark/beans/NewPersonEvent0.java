@@ -78,6 +78,7 @@ public class NewPersonEvent0 implements Serializable {
 		this.province = Emails.EMAILS[r.nextInt(Emails.NUM_EMAILS)];
 		this.homepage = Firstnames.FIRSTNAMES[r.nextInt(Firstnames.NUM_FIRSTNAMES)];
 		this.creditcard = "00000000000";
+		this.zipcode = "10587";
 	}
 
 	public String getName() {

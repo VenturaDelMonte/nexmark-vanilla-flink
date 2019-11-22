@@ -1,8 +1,10 @@
 package io.ventura.nexmark;
 
 import io.ventura.nexmark.NexmarkQuery5.NexmarkQuery5;
+import io.ventura.nexmark.NexmarkQuery5b.NexmarkQuery5b;
 import io.ventura.nexmark.NexmarkQuery8.NexmarkQuery8;
 import io.ventura.nexmark.NexmarkQueryX.NexmarkQueryX;
+import io.ventura.nexmark.generator.GeneratorPipeline;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.ConfigConstants;
@@ -13,6 +15,7 @@ import org.apache.flink.runtime.instance.ActorGateway;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.testingUtils.TestingCluster;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.util.InstantiationUtil;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
@@ -31,10 +34,8 @@ public class NexmarkSuite {
 
 	private static final Logger LOG = LoggerFactory.getLogger(NexmarkSuite.class);
 
-
 	private static final int numTaskManagers = 4;
 	private static final int slotsPerTaskManager = 1;
-
 
 	private static TestingCluster cluster;
 
@@ -57,7 +58,10 @@ public class NexmarkSuite {
 		config.setString(CheckpointingOptions.CHECKPOINTS_DIRECTORY, "file://" + System.getProperty("java.io.tmpdir"));
 		config.setBoolean(CheckpointingOptions.LOCAL_RECOVERY, false);
 
-
+//		kafkaServer.prepare(kafkaServer.createConfig()
+//			.setKafkaServersNumber(1)
+//			.setSecureMode(false)
+//			.setHideKafkaBehindProxy(false));
 
 
 		cluster = new TestingCluster(config);
@@ -66,7 +70,7 @@ public class NexmarkSuite {
 	}
 
 	@AfterClass
-	public static void shutDownExistingCluster() {
+	public static void shutDownExistingCluster() throws Exception {
 		if (cluster != null) {
 			cluster.stop();
 		}
@@ -216,4 +220,34 @@ public class NexmarkSuite {
 
 		cluster.submitJobAndWait(jobGraph, true);
 	}
+
+
+	@Test
+	public void runNexmarkNES() throws Exception {
+
+		Map<String, String> config = new HashMap<>();
+
+		config.put("checkpointingInterval", "60000");
+//		config.put("checkpointingTimeout", ""+(2*60*1000));
+		config.put("windowParallelism", "4");
+		config.put("numEvents", "10000");
+		config.put("sourceParallelism", "2");
+		config.put("minPauseBetweenCheckpoints", "10000");
+		config.put("sinkParallelism", "4");
+
+		ParameterTool params = ParameterTool.fromMap(config);
+
+//		kafkaServer.createTestTopic("nexmark-events", 2, 1);
+
+		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+		GeneratorPipeline.runGenerator(env, params);
+		NexmarkQuery5b.runNexmarkQ5(env, params);
+
+		JobGraph jobGraph = env.getStreamGraph().getJobGraph();
+
+		cluster.submitJobAndWait(jobGraph, true);
+
+	}
+
 }

@@ -18,6 +18,7 @@ public class NexmarkCommon {
 
 	public static final long MAX_PERSON_ID = 540_000_000L;
 	public static final long MAX_AUCTION_ID = 540_000_000_000L;
+	public static final long MAX_BID_ID = 540_000_000_000L;
 
 	public static final int HOT_SELLER_RATIO = 100;
 	public static final int HOT_AUCTIONS_PROB = 85;
@@ -36,7 +37,25 @@ public class NexmarkCommon {
 			START_ID_AUCTION[i] = START_ID_AUCTION[i - 1] + auction_stride;
 		}
 
+	}
 
+
+	public static void getPersonStride(int subTaskIndex, int parallelism, long[] out) {
+		long stride = MAX_PERSON_ID / parallelism;
+		out[0] =  stride * subTaskIndex;
+		out[1] = out[0] + stride;
+	}
+
+	public static void geAuctiontride(int subTaskIndex, int parallelism, long[] out) {
+		long stride = MAX_AUCTION_ID / parallelism;
+		out[0] =  stride * subTaskIndex;
+		out[1] = out[0] + stride;
+	}
+
+	public static void getBidStride(int subTaskIndex, int parallelism, long[] out) {
+		long stride = MAX_BID_ID / parallelism;
+		out[0] =  stride * subTaskIndex;
+		out[1] = out[0] + stride;
 	}
 
 }

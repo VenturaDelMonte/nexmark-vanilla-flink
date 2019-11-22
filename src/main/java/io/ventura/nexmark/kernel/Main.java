@@ -9,6 +9,7 @@ import static io.ventura.nexmark.NexmarkQuery5.NexmarkQuery5.runNexmarkQ5;
 import static io.ventura.nexmark.NexmarkQuery8.NexmarkQuery8.runNexmarkQ8;
 import static io.ventura.nexmark.NexmarkQuery8.NexmarkQuery8.runNexmarkQ8Debug;
 import static io.ventura.nexmark.NexmarkQueryX.NexmarkQueryX.runNexmarkQX;
+import static io.ventura.nexmark.generator.GeneratorPipeline.runGenerator;
 
 public class Main {
 
@@ -34,6 +35,9 @@ public class Main {
 			} else if (params.has("qx")) {
 				query = "Query X";
 				runNexmarkQX(env, params);
+			} else if (params.has("qx")) {
+				query = "Generator";
+				runGenerator(env, params);
 			} else {
 				throw new UnsupportedOperationException();
 			}

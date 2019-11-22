@@ -377,6 +377,7 @@ public class NexmarkQueryX {
 
 		combo
 				.addSink(new WinningBidLatencyTracker("combo"))
+				.name("NexmarkXSink")
 				.setParallelism(windowParallelism);
 
 		// q8
