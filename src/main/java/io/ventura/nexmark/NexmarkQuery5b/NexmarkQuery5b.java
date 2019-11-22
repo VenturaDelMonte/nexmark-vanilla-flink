@@ -4,7 +4,6 @@ import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import io.ventura.nexmark.NexmarkQuery5.NexmarkQuery5;
-import io.ventura.nexmark.beans.BidEvent0;
 import io.ventura.nexmark.beans.NexmarkEvent;
 import io.ventura.nexmark.beans.Serializer;
 import io.ventura.nexmark.common.BidsFlatMapper;
@@ -110,12 +109,18 @@ public class NexmarkQuery5b {
 		env.getConfig().setLatencyTrackingInterval(latencyTrackingInterval);
 
 		env.getConfig().enableForceKryo();
-		env.getConfig().registerTypeWithKryoSerializer(BidEvent0.class, BidEvent0.BidEventKryoSerializer.class);
-		env.getConfig().addDefaultKryoSerializer(BidEvent0.class, BidEvent0.BidEventKryoSerializer.class);
-		env.getConfig().registerKryoType(BidEvent0.class);
-		env.getConfig().registerTypeWithKryoSerializer(NexmarkQuery4Accumulator.class, NexmarkQuery4AccumulatorSerializer.class);
-		env.getConfig().addDefaultKryoSerializer(NexmarkQuery4Accumulator.class, NexmarkQuery4AccumulatorSerializer.class);
-		env.getConfig().registerKryoType(NexmarkQuery4Accumulator.class);
+		env.getConfig().registerTypeWithKryoSerializer(NexmarkEvent.AuctionEvent.class, Serializer.AuctionEventKryoSerializer.class);
+		env.getConfig().addDefaultKryoSerializer(NexmarkEvent.AuctionEvent.class, Serializer.AuctionEventKryoSerializer.class);
+		env.getConfig().registerKryoType(NexmarkEvent.AuctionEvent.class);
+		env.getConfig().registerTypeWithKryoSerializer(NexmarkEvent.PersonEvent.class, Serializer.NewPersonEventKryoSerializer.class);
+		env.getConfig().addDefaultKryoSerializer(NexmarkEvent.PersonEvent.class, Serializer.NewPersonEventKryoSerializer.class);
+		env.getConfig().registerKryoType(NexmarkEvent.PersonEvent.class);
+		env.getConfig().registerTypeWithKryoSerializer(NexmarkEvent.BidEvent.class, Serializer.BidEventKryoSerializer.class);
+		env.getConfig().addDefaultKryoSerializer(NexmarkEvent.BidEvent.class, Serializer.BidEventKryoSerializer.class);
+		env.getConfig().registerKryoType(NexmarkEvent.BidEvent.class);
+		env.getConfig().registerTypeWithKryoSerializer(NexmarkQuery5.NexmarkQuery4Accumulator.class, NexmarkQuery5.NexmarkQuery4AccumulatorSerializer.class);
+		env.getConfig().addDefaultKryoSerializer(NexmarkQuery5.NexmarkQuery4Accumulator.class, NexmarkQuery5.NexmarkQuery4AccumulatorSerializer.class);
+		env.getConfig().registerKryoType(NexmarkQuery5.NexmarkQuery4Accumulator.class);
 		env.getConfig().enableObjectReuse();
 		env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
 
@@ -366,14 +371,14 @@ public class NexmarkQuery5b {
 		}
 	}
 
-	private static class NexmarkQuery4Aggregator implements AggregateFunction<BidEvent0, NexmarkQuery4Accumulator, NexmarkQuery4Output> {
+	private static class NexmarkQuery4Aggregator implements AggregateFunction<NexmarkEvent.BidEvent, NexmarkQuery4Accumulator, NexmarkQuery4Output> {
 		@Override
 		public NexmarkQuery4Accumulator createAccumulator() {
 			return new NexmarkQuery4Accumulator(-1, Double.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE);
 		}
 
 		@Override
-		public NexmarkQuery4Accumulator add(BidEvent0 e, NexmarkQuery4Accumulator acc) {
+		public NexmarkQuery4Accumulator add(NexmarkEvent.BidEvent e, NexmarkQuery4Accumulator acc) {
 			return acc.add(e);
 		}
 
@@ -424,7 +429,7 @@ public class NexmarkQuery5b {
 
 		}
 
-		public NexmarkQuery4Accumulator add(BidEvent0 e) {
+		public NexmarkQuery4Accumulator add(NexmarkEvent.BidEvent e) {
 			maxPrice = Math.max(maxPrice, e.bid);
 			auction = e.auctionId;
 //			lastIngestionTimestamp = e.ingestionTimestamp;
