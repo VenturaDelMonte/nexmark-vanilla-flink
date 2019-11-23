@@ -12,6 +12,8 @@ public interface NexmarkEvent extends Serializable {
 
 	int getEventType();
 
+	long getEventId();
+
 	public static final Recycler<AuctionEvent> AUCTIONS_RECYCLER = new Recycler<AuctionEvent>(2 * 1024 * 1024) {
 		@Override
 		protected AuctionEvent newObject(Handle handle) {
@@ -38,6 +40,11 @@ public interface NexmarkEvent extends Serializable {
 		@Override
 		public int getEventType() {
 			return 0;
+		}
+
+		@Override
+		public long getEventId() {
+			return auctionId;
 		}
 
 		@Override
@@ -83,6 +90,11 @@ public interface NexmarkEvent extends Serializable {
 		}
 
 		@Override
+		public long getEventId() {
+			return auctionId;
+		}
+
+		@Override
 		public void writeKey(ByteBuffer b) {
 			b.putLong(auctionId);
 		}
@@ -118,6 +130,11 @@ public interface NexmarkEvent extends Serializable {
 		@Override
 		public int getEventType() {
 			return 2;
+		}
+
+		@Override
+		public long getEventId() {
+			return personId;
 		}
 
 		@Override

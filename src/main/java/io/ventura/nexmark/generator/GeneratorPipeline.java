@@ -1,5 +1,6 @@
 package io.ventura.nexmark.generator;
 
+import akka.routing.MurmurHash;
 import io.ventura.nexmark.NexmarkQuery5.NexmarkQuery5;
 import io.ventura.nexmark.beans.NexmarkEvent;
 import io.ventura.nexmark.beans.Serializer;
@@ -7,6 +8,7 @@ import io.ventura.nexmark.common.NexmarkCommon;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
 import org.apache.flink.shaded.guava18.com.google.common.util.concurrent.RateLimiter;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
@@ -15,8 +17,12 @@ import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer011;
+import org.apache.flink.streaming.connectors.kafka.partitioner.FlinkKafkaPartitioner;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import scala.util.hashing.MurmurHash3;
 
+import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -38,15 +44,19 @@ public class GeneratorPipeline {
 		final long genSpeedMax = params.getLong("genSpeedMax", genSpeedMin + 1);
 		final String kafkaServers = params.get("kafkaServers", "localhost:9092");
 
-		Properties baseCfg = new Properties();
+		Properties kafkaCfg = new Properties();
 
-		baseCfg.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServers);
-		baseCfg.setProperty(ConsumerConfig.RECEIVE_BUFFER_CONFIG, "" + (4 * 1024 * 1024));
-		baseCfg.setProperty(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, "32768");
-		baseCfg.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "im-job");
-		baseCfg.setProperty("offsets.commit.timeout.ms", "" + (3 * 60 * 1000));
-		baseCfg.setProperty(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, "" + (10 * 1024 * 1024));
-		baseCfg.setProperty(ConsumerConfig.CHECK_CRCS_CONFIG, "false");
+		kafkaCfg.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServers);
+		kafkaCfg.setProperty(ConsumerConfig.RECEIVE_BUFFER_CONFIG, "" + (4 * 1024 * 1024));
+		kafkaCfg.setProperty(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, "32768");
+		kafkaCfg.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "im-job");
+		kafkaCfg.setProperty("offsets.commit.timeout.ms", "" + (3 * 60 * 1000));
+		kafkaCfg.setProperty(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, "" + (10 * 1024 * 1024));
+		kafkaCfg.setProperty(ConsumerConfig.CHECK_CRCS_CONFIG, "false");
+		kafkaCfg.put(ProducerConfig.ACKS_CONFIG, "0");
+		kafkaCfg.put(ProducerConfig.LINGER_MS_CONFIG, "100");
+		kafkaCfg.put(ProducerConfig.BUFFER_MEMORY_CONFIG, 256 * 1024 * 1024);
+		kafkaCfg.put(ProducerConfig.BATCH_SIZE_CONFIG, 32768);
 
 		env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 		env.setRestartStrategy(RestartStrategies.fallBackRestart());
@@ -167,9 +177,89 @@ public class GeneratorPipeline {
 			}
 		}).setParallelism(sourceParallelism);
 
-		FlinkKafkaProducer011<NexmarkEvent> kafkaProducer = new FlinkKafkaProducer011<NexmarkEvent>(kafkaServers, "nexmark-events", new Serializer.KafkaSerializationSchema());
+		FlinkKafkaProducer011<NexmarkEvent> kafkaProducer = new FlinkKafkaProducer011<>(
+				"nexmark-events",
+				new Serializer.KafkaSerializationSchema(),
+				kafkaCfg,
+				Optional.of(new FlinkKafkaPartitioner<NexmarkEvent>() {
+
+//					private int parallelInstanceId;
+//					private int parallelInstances;
+//
+//					@Override
+//					public void open(int parallelInstanceId, int parallelInstances) {
+//						super.open(parallelInstanceId, parallelInstances);
+//						this.parallelInstanceId = parallelInstanceId;
+//						this.parallelInstances = parallelInstances;
+//					}
+
+					@Override
+					public int partition(NexmarkEvent nexmarkEvent, byte[] key, byte[] value, String topic, int[] partitions) {
+						return hash32(key, 0, 4, 104729) % partitions.length;
+					}
+				}));
+
 		kafkaProducer.setWriteTimestampToKafka(false);
+		kafkaProducer.ignoreFailuresAfterTransactionTimeout();
+		kafkaProducer.setLogFailuresOnly(false);
 
 		in.addSink(kafkaProducer);
+	}
+
+	// MurmurHash3 taken from Hive codebase
+
+	public static int hash32(byte[] data, final int offset, final int length, final int seed) {
+		int hash = seed;
+		final int nblocks = length >> 2;
+
+		// body
+		for (int i = 0; i < nblocks; i++) {
+			int i_4 = i << 2;
+			int k = (data[offset + i_4] & 0xff)
+					| ((data[offset + i_4 + 1] & 0xff) << 8)
+					| ((data[offset + i_4 + 2] & 0xff) << 16)
+					| ((data[offset + i_4 + 3] & 0xff) << 24);
+
+			hash = mix32(k, hash);
+		}
+
+		// tail
+		int idx = nblocks << 2;
+		int k1 = 0;
+		switch (length - idx) {
+			case 3:
+				k1 ^= data[offset + idx + 2] << 16;
+			case 2:
+				k1 ^= data[offset + idx + 1] << 8;
+			case 1:
+				k1 ^= data[offset + idx];
+
+				// mix functions
+				k1 *= 0xcc9e2d51;
+				k1 = Integer.rotateLeft(k1, 15);
+				k1 *= 0x1b873593;
+				hash ^= k1;
+		}
+
+		return fmix32(length, hash);
+	}
+
+	private static int mix32(int k, int hash) {
+		k *= 0xcc9e2d51;
+		k = Integer.rotateLeft(k, 15);
+		k *= 0x1b873593;
+		hash ^= k;
+		return Integer.rotateLeft(hash, 13) * 5 + 0xe6546b64;
+	}
+
+	private static int fmix32(int length, int hash) {
+		hash ^= length;
+		hash ^= (hash >>> 16);
+		hash *= 0x85ebca6b;
+		hash ^= (hash >>> 13);
+		hash *= 0xc2b2ae35;
+		hash ^= (hash >>> 16);
+
+		return hash;
 	}
 }
