@@ -241,7 +241,12 @@ public class GeneratorPipeline {
 				hash ^= k1;
 		}
 
-		return fmix32(length, hash);
+		int code = fmix32(length, hash);
+		if (code >= 0) {
+			return code;
+		} else {
+			return code != -2147483648 ? -code : 0;
+		}
 	}
 
 	private static int mix32(int k, int hash) {
