@@ -56,7 +56,9 @@ public class GeneratorPipeline {
 		kafkaCfg.put(ProducerConfig.ACKS_CONFIG, "0");
 		kafkaCfg.put(ProducerConfig.LINGER_MS_CONFIG, "100");
 		kafkaCfg.put(ProducerConfig.BUFFER_MEMORY_CONFIG, 256 * 1024 * 1024);
-		kafkaCfg.put(ProducerConfig.BATCH_SIZE_CONFIG, 32768);
+		kafkaCfg.put(ProducerConfig.BATCH_SIZE_CONFIG, 8 * 1024);
+		kafkaCfg.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 10 * 60 * 1000);
+
 
 		env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 		env.setRestartStrategy(RestartStrategies.fallBackRestart());
