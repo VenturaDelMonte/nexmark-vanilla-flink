@@ -157,7 +157,7 @@ public class NexmarkQuery5b {
 						return value.auctionId;
 					}
 				})
-				.process(new Aggregator(Time.seconds(windowDuration)))
+				.process(new Aggregator(Time.seconds(10)))
 				.name("Nexmark4Aggregator")
 				.uid(new UUID(0, 5).toString())
 				.setParallelism(windowParallelism)
@@ -224,7 +224,7 @@ public class NexmarkQuery5b {
 
 	public static final class NexmarkQuery4LatencyTrackingSink extends RichSinkFunction<NexmarkQuery4Output> implements Gauge<Double> {
 
-		private static final long LATENCY_THRESHOLD = 10L * 60L * 1000L;
+		private static final long LATENCY_THRESHOLD = 30L * 60L * 1000L;
 
 		private transient SummaryStatistics sinkLatencyBid;
 //		private transient SummaryStatistics sinkLatencyWindow;
