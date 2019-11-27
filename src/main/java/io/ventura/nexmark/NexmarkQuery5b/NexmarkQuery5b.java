@@ -353,7 +353,9 @@ public class NexmarkQuery5b {
 				sinkLatencyFlightTime.addValue(timeMillis - record.lastIngestionTimestamp);
 //				sinkLatencyWindow.addValue(timeMillis - record.windowTriggeringTimestamp);
 				this.latency.lazySet((int) sinkLatencyBid.getMean());
-				updateCSV(timeMillis);
+				if (seenSoFar++ % 500_000 == 0) {
+					updateCSV(timeMillis);
+				}
 			}
 		}
 
