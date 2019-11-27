@@ -144,7 +144,7 @@ public class GeneratorPipeline {
 									long n = r.nextLong(activePersons + 100);
 									matchingPerson = auctionParam[0] + personId + activePersons - n;
 								}
-								ctx.collect(NexmarkEvent.AUCTIONS_RECYCLER.get().initEx(auctionId, matchingPerson, timestamp, timestamp + 10_000, r));
+								ctx.collect(NexmarkEvent.AUCTIONS_RECYCLER.get().initEx(auctionId, matchingPerson, timestamp, timestamp + r.nextInt(10_000, 180_000), r));
 							} else {
 								long auction, bidder;
 								if (r.nextInt(100) > NexmarkCommon.HOT_AUCTIONS_PROB) {

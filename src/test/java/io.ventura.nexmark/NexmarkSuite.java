@@ -227,10 +227,10 @@ public class NexmarkSuite {
 
 		Map<String, String> config = new HashMap<>();
 
-		config.put("checkpointingInterval", "60000");
+		config.put("checkpointingInterval", "0");
 //		config.put("checkpointingTimeout", ""+(2*60*1000));
 		config.put("windowParallelism", "4");
-		config.put("numEvents", "10000");
+		config.put("numEvents", "100000");
 		config.put("sourceParallelism", "2");
 		config.put("minPauseBetweenCheckpoints", "10000");
 		config.put("sinkParallelism", "4");

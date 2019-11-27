@@ -3,20 +3,14 @@ package io.ventura.nexmark.NexmarkQuery5b;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
-import io.ventura.nexmark.NexmarkQuery5.NexmarkQuery5;
 import io.ventura.nexmark.beans.NexmarkEvent;
 import io.ventura.nexmark.beans.Serializer;
-import io.ventura.nexmark.common.BidsFlatMapper;
-import io.ventura.nexmark.source.BidDesearializationSchema;
-import io.ventura.nexmark.source.NexmarkBidSource;
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import org.apache.flink.api.common.functions.AggregateFunction;
-import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.state.MapState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
-import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.utils.ParameterTool;
@@ -27,13 +21,11 @@ import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
-import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
-import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer011;
 import org.apache.flink.util.Collector;
@@ -118,9 +110,9 @@ public class NexmarkQuery5b {
 		env.getConfig().registerTypeWithKryoSerializer(NexmarkEvent.BidEvent.class, Serializer.BidEventKryoSerializer.class);
 		env.getConfig().addDefaultKryoSerializer(NexmarkEvent.BidEvent.class, Serializer.BidEventKryoSerializer.class);
 		env.getConfig().registerKryoType(NexmarkEvent.BidEvent.class);
-		env.getConfig().registerTypeWithKryoSerializer(NexmarkQuery5.NexmarkQuery4Accumulator.class, NexmarkQuery5.NexmarkQuery4AccumulatorSerializer.class);
-		env.getConfig().addDefaultKryoSerializer(NexmarkQuery5.NexmarkQuery4Accumulator.class, NexmarkQuery5.NexmarkQuery4AccumulatorSerializer.class);
-		env.getConfig().registerKryoType(NexmarkQuery5.NexmarkQuery4Accumulator.class);
+		env.getConfig().registerTypeWithKryoSerializer(NexmarkQuery4Accumulator.class, NexmarkQuery4AccumulatorSerializer.class);
+		env.getConfig().addDefaultKryoSerializer(NexmarkQuery4Accumulator.class, NexmarkQuery4AccumulatorSerializer.class);
+		env.getConfig().registerKryoType(NexmarkQuery4Accumulator.class);
 		env.getConfig().enableObjectReuse();
 		env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
 
@@ -209,7 +201,7 @@ public class NexmarkQuery5b {
 				}
 			});
 			if (old == null || old.count == 1) {
-				ctx.timerService().registerEventTimeTimer(windowDuration);
+				ctx.timerService().registerProcessingTimeTimer(ctx.timerService().currentProcessingTime() + windowDuration);
 			}
 			value.recycle();
 		}
