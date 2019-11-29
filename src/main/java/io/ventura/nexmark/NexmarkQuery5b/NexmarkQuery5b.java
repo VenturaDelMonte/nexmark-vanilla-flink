@@ -234,7 +234,7 @@ public class NexmarkQuery5b {
 
 		private transient int writtenSoFar = 0;
 
-		private transient long seenSoFar = 0;
+		private transient long prevValue = 0;
 
 		private final String name;
 
@@ -275,7 +275,7 @@ public class NexmarkQuery5b {
 
 			stringBuffer.setLength(0);
 			logInit = true;
-			seenSoFar = 0;
+			prevValue = 0;
 
 			latency = new AtomicInteger(0);
 
@@ -353,8 +353,9 @@ public class NexmarkQuery5b {
 				sinkLatencyFlightTime.addValue(timeMillis - record.lastIngestionTimestamp);
 //				sinkLatencyWindow.addValue(timeMillis - record.windowTriggeringTimestamp);
 				this.latency.lazySet((int) sinkLatencyBid.getMean());
-				if (seenSoFar++ % 40_000 == 0) {
+				if (Math.abs(latency - prevValue) > 250) {
 					updateCSV(timeMillis);
+					prevValue = latency;
 				}
 			}
 		}
