@@ -234,7 +234,7 @@ public class NexmarkQuery5b {
 
 		private transient int writtenSoFar = 0;
 
-		private transient long prevValue = 0;
+		private transient double prevValue = 0;
 
 		private final String name;
 
@@ -350,12 +350,13 @@ public class NexmarkQuery5b {
 			long latency = timeMillis - record.lastTimestamp;
 			if (latency <= LATENCY_THRESHOLD) {
 				sinkLatencyBid.addValue(latency);
+				double mean = sinkLatencyBid.getMean();
 				sinkLatencyFlightTime.addValue(timeMillis - record.lastIngestionTimestamp);
 //				sinkLatencyWindow.addValue(timeMillis - record.windowTriggeringTimestamp);
-				this.latency.lazySet((int) sinkLatencyBid.getMean());
-				if (Math.abs(latency - prevValue) > 250) {
+				this.latency.lazySet((int) mean);
+				if (Math.abs(mean - prevValue) > 500) {
 					updateCSV(timeMillis);
-					prevValue = latency;
+					prevValue = mean;
 				}
 			}
 		}
