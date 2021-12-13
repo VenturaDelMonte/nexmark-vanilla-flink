@@ -11,7 +11,7 @@ import java.nio.ByteBuffer;
 
 public class AuctionsDeserializationSchema implements KeyedDeserializationSchema<AuctionEvent0[]> {
 
-	private static final int AUCTION_RECORD_SIZE = 269;
+	public static final int AUCTION_RECORD_SIZE = 269;
 
 	private static final TypeInformation<AuctionEvent0[]> FLINK_INTERNAL_TYPE = TypeInformation.of(new TypeHint<AuctionEvent0[]>() {});
 

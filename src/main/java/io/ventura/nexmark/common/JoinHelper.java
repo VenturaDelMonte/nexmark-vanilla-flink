@@ -3,10 +3,10 @@ package io.ventura.nexmark.common;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
-import org.apache.flink.api.common.typeutils.CompatibilityResult;
-import org.apache.flink.api.common.typeutils.CompatibilityUtil;
+//import org.apache.flink.api.common.typeutils.CompatibilityResult;
+//import org.apache.flink.api.common.typeutils.CompatibilityUtil;
 import org.apache.flink.api.common.typeutils.CompositeTypeSerializerConfigSnapshot;
-import org.apache.flink.api.common.typeutils.TypeDeserializerAdapter;
+//import org.apache.flink.api.common.typeutils.TypeDeserializerAdapter;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.common.typeutils.TypeSerializerConfigSnapshot;
 import org.apache.flink.api.common.typeutils.UnloadableDummyTypeSerializer;
@@ -273,52 +273,52 @@ public class JoinHelper {
 			if (obj instanceof UnionSerializer) {
 				UnionSerializer<T1, T2> other = (UnionSerializer<T1, T2>) obj;
 
-				return other.canEqual(this) && oneSerializer.equals(other.oneSerializer) && twoSerializer.equals(other.twoSerializer);
+				return oneSerializer.equals(other.oneSerializer) && twoSerializer.equals(other.twoSerializer);
 			} else {
 				return false;
 			}
 		}
-
-		@Override
-		public boolean canEqual(Object obj) {
-			return obj instanceof UnionSerializer;
-		}
+//
+//		@Override
+//		public boolean canEqual(Object obj) {
+//			return obj instanceof UnionSerializer;
+//		}
 
 		@Override
 		public TypeSerializerConfigSnapshot snapshotConfiguration() {
 			return new UnionSerializerConfigSnapshot<>(oneSerializer, twoSerializer);
 		}
-
-		@Override
-		public CompatibilityResult<TaggedUnion<T1, T2>> ensureCompatibility(TypeSerializerConfigSnapshot configSnapshot) {
-			if (configSnapshot instanceof UnionSerializerConfigSnapshot) {
-				List<Tuple2<TypeSerializer<?>, TypeSerializerConfigSnapshot>> previousSerializersAndConfigs =
-					((UnionSerializerConfigSnapshot) configSnapshot).getNestedSerializersAndConfigs();
-
-				CompatibilityResult<T1> oneSerializerCompatResult = CompatibilityUtil.resolveCompatibilityResult(
-					previousSerializersAndConfigs.get(0).f0,
-					UnloadableDummyTypeSerializer.class,
-					previousSerializersAndConfigs.get(0).f1,
-					oneSerializer);
-
-				CompatibilityResult<T2> twoSerializerCompatResult = CompatibilityUtil.resolveCompatibilityResult(
-					previousSerializersAndConfigs.get(1).f0,
-					UnloadableDummyTypeSerializer.class,
-					previousSerializersAndConfigs.get(1).f1,
-					twoSerializer);
-
-				if (!oneSerializerCompatResult.isRequiresMigration() && !twoSerializerCompatResult.isRequiresMigration()) {
-					return CompatibilityResult.compatible();
-				} else if (oneSerializerCompatResult.getConvertDeserializer() != null && twoSerializerCompatResult.getConvertDeserializer() != null) {
-					return CompatibilityResult.requiresMigration(
-						new UnionSerializer<>(
-							new TypeDeserializerAdapter<>(oneSerializerCompatResult.getConvertDeserializer()),
-							new TypeDeserializerAdapter<>(twoSerializerCompatResult.getConvertDeserializer())));
-				}
-			}
-
-			return CompatibilityResult.requiresMigration();
-		}
+//
+//		@Override
+//		public CompatibilityResult<TaggedUnion<T1, T2>> ensureCompatibility(TypeSerializerConfigSnapshot configSnapshot) {
+//			if (configSnapshot instanceof UnionSerializerConfigSnapshot) {
+//				List<Tuple2<TypeSerializer<?>, TypeSerializerConfigSnapshot>> previousSerializersAndConfigs =
+//					((UnionSerializerConfigSnapshot) configSnapshot).getNestedSerializersAndConfigs();
+//
+//				CompatibilityResult<T1> oneSerializerCompatResult = CompatibilityUtil.resolveCompatibilityResult(
+//					previousSerializersAndConfigs.get(0).f0,
+//					UnloadableDummyTypeSerializer.class,
+//					previousSerializersAndConfigs.get(0).f1,
+//					oneSerializer);
+//
+//				CompatibilityResult<T2> twoSerializerCompatResult = CompatibilityUtil.resolveCompatibilityResult(
+//					previousSerializersAndConfigs.get(1).f0,
+//					UnloadableDummyTypeSerializer.class,
+//					previousSerializersAndConfigs.get(1).f1,
+//					twoSerializer);
+//
+//				if (!oneSerializerCompatResult.isRequiresMigration() && !twoSerializerCompatResult.isRequiresMigration()) {
+//					return CompatibilityResult.compatible();
+//				} else if (oneSerializerCompatResult.getConvertDeserializer() != null && twoSerializerCompatResult.getConvertDeserializer() != null) {
+//					return CompatibilityResult.requiresMigration(
+//						new UnionSerializer<>(
+//							new TypeDeserializerAdapter<>(oneSerializerCompatResult.getConvertDeserializer()),
+//							new TypeDeserializerAdapter<>(twoSerializerCompatResult.getConvertDeserializer())));
+//				}
+//			}
+//
+//			return CompatibilityResult.requiresMigration();
+//		}
 	}
 
 	/**

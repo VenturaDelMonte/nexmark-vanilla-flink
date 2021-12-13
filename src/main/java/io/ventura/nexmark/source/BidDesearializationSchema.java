@@ -16,7 +16,7 @@ public class BidDesearializationSchema implements KeyedDeserializationSchema<Bid
 
 	private boolean isPartitionConsumed = false;
 
-	private final static int BID_RECORD_SIZE = 8 + 8 + 8 + 8;
+	public final static int BID_RECORD_SIZE = 8 + 8 + 8 + 8;
 
 //	private static byte[] DUMMY = new byte[64];
 

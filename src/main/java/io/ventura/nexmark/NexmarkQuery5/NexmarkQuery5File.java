@@ -4,13 +4,12 @@ import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import io.ventura.nexmark.beans.BidEvent0;
+import io.ventura.nexmark.beans.NewPersonEvent0;
 import io.ventura.nexmark.common.BidsFlatMapper;
 import io.ventura.nexmark.source.BidDesearializationSchema;
 import io.ventura.nexmark.source.NexmarkBidSource;
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import org.apache.flink.api.common.functions.AggregateFunction;
-import org.apache.flink.api.common.functions.RichAggregateFunction;
-import org.apache.flink.api.common.functions.RichFlatMapFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.state.MapState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
@@ -30,12 +29,12 @@ import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
+import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
-import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
-import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer011;
 import org.apache.flink.util.Collector;
+import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.ShutdownHookUtil;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.slf4j.Logger;
@@ -46,6 +45,11 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Serializable;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -55,8 +59,10 @@ import java.util.function.BiFunction;
 
 import static io.ventura.nexmark.NexmarkQuery8.NexmarkQuery8.readProperty;
 import static io.ventura.nexmark.common.NexmarkCommon.BIDS_TOPIC;
+import static io.ventura.nexmark.source.BidDesearializationSchema.BID_RECORD_SIZE;
+import static io.ventura.nexmark.source.PersonDeserializationSchema.PERSON_RECORD_SIZE;
 
-public class NexmarkQuery5 {
+public class NexmarkQuery5File {
 
 	private static final Logger LOG = LoggerFactory.getLogger(NexmarkQuery5.class);
 
@@ -111,9 +117,9 @@ public class NexmarkQuery5 {
 		env.getConfig().registerTypeWithKryoSerializer(BidEvent0.class, BidEvent0.BidEventKryoSerializer.class);
 		env.getConfig().addDefaultKryoSerializer(BidEvent0.class, BidEvent0.BidEventKryoSerializer.class);
 		env.getConfig().registerKryoType(BidEvent0.class);
-		env.getConfig().registerTypeWithKryoSerializer(NexmarkQuery4Accumulator.class, NexmarkQuery4AccumulatorSerializer.class);
-		env.getConfig().addDefaultKryoSerializer(NexmarkQuery4Accumulator.class, NexmarkQuery4AccumulatorSerializer.class);
-		env.getConfig().registerKryoType(NexmarkQuery4Accumulator.class);
+		env.getConfig().registerTypeWithKryoSerializer(NexmarkQuery5.NexmarkQuery4Accumulator.class, NexmarkQuery5.NexmarkQuery4AccumulatorSerializer.class);
+		env.getConfig().addDefaultKryoSerializer(NexmarkQuery5.NexmarkQuery4Accumulator.class, NexmarkQuery5.NexmarkQuery4AccumulatorSerializer.class);
+		env.getConfig().registerKryoType(NexmarkQuery5.NexmarkQuery4Accumulator.class);
 		env.getConfig().enableObjectReuse();
 		env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
 
@@ -134,30 +140,91 @@ public class NexmarkQuery5 {
 					.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<BidEvent0>(Time.seconds(1)) {
 						@Override
 						public long extractTimestamp(BidEvent0 e) {
-						return e.timestamp;
-					}
+							return e.timestamp;
+						}
 					})
 					.setParallelism(sourceParallelism)
 					.uid(new UUID(0, 1).toString())
-					.returns(TypeInformation.of(new TypeHint<BidEvent0>() {}));
-
-
+					.returns(TypeInformation.of(new TypeHint<BidEvent0>() {
+					}));
 
 
 		} else {
 
-			FlinkKafkaConsumer011<BidEvent0[]> kafkaBids =
-				new FlinkKafkaConsumer011<>(BIDS_TOPIC, new BidDesearializationSchema(), baseCfg);
-
-			kafkaBids.setCommitOffsetsOnCheckpoints(true);
-			kafkaBids.setStartFromEarliest();
+//			FlinkKafkaConsumer011<BidEvent0[]> kafkaBids =
+//				new FlinkKafkaConsumer011<>(BIDS_TOPIC, new BidDesearializationSchema(), baseCfg);
+//
+//			kafkaBids.setCommitOffsetsOnCheckpoints(true);
+//			kafkaBids.setStartFromEarliest();
 
 			in = env
-					.addSource(kafkaBids)
+					.addSource(new RichParallelSourceFunction<BidEvent0>() {
+
+						private transient FileChannel fc;
+						private transient ByteBuffer mappedData;
+						private volatile boolean isRunning;
+
+						private static final int BUFFER_SIZE = 64 * 1024;
+
+						@Override
+						public void open(Configuration parameters) throws Exception {
+							super.open(parameters);
+							File inputDir = new File(readProperty("nexmark.input.dir", System.getProperty("java.io.tmpdir")));
+							Path inputPath = Paths.get(inputDir + "/bids_" + getRuntimeContext().getIndexOfThisSubtask() + ".bin");
+							Preconditions.checkArgument(inputDir.exists());
+							double startMapping = System.nanoTime();
+							fc = FileChannel.open(inputPath, StandardOpenOption.READ);
+							mappedData = fc.map(FileChannel.MapMode.READ_ONLY, 0, fc.size());
+							double endMapping = System.nanoTime();
+							double diff = (endMapping - startMapping) / 1000;
+							LOG.info("It took " + diff + " us to mmap the file");
+							isRunning = true;
+						}
+
+						@Override
+						public void run(SourceContext<BidEvent0> sourceContext) throws Exception {
+							int consumedSoFarBytes = 0;
+							while (isRunning && mappedData.remaining() > 0) {
+								int checksum = mappedData.getInt();
+								int itemsInThisBuffer = mappedData.getInt();
+								long newBacklog = mappedData.getLong();
+
+								Preconditions.checkArgument(checksum == 0xdeedbeaf);
+								Preconditions.checkArgument(((BUFFER_SIZE - 16) / BID_RECORD_SIZE) >= itemsInThisBuffer);
+
+								long ingestionTimestamp = System.currentTimeMillis();
+								consumedSoFarBytes = 16;
+								for (int i = 0; i < itemsInThisBuffer; i++) {
+									consumedSoFarBytes += BID_RECORD_SIZE;
+									long bidderId = mappedData.getLong();
+									long auctionId = mappedData.getLong();
+									double price = mappedData.getDouble();
+									long timestamp = mappedData.getLong();
+
+									sourceContext
+											.collect(
+													BidEvent0.BIDS_RECYCLER.get().init(
+															ingestionTimestamp, timestamp, auctionId, bidderId, -1, price
+													)
+											);
+								}
+
+								int remainingToConsume = BUFFER_SIZE - consumedSoFarBytes;
+								if (remainingToConsume > 0) {
+									mappedData.position(Math.min(mappedData.limit(), mappedData.position() + remainingToConsume));
+								}
+							}
+						}
+
+						@Override
+						public void cancel() {
+							isRunning = false;
+						}
+					})
 					.name("BidsStream")
 					.setParallelism(sourceParallelism)
 					.uid(new UUID(0, 2).toString())
-					.flatMap(new BidsFlatMapper())
+//					.flatMap(new BidsFlatMapper())
 					.setParallelism(sourceParallelism)
 					.uid(new UUID(0, 3).toString())
 					.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<BidEvent0>(Time.seconds(2)) {
@@ -168,7 +235,8 @@ public class NexmarkQuery5 {
 					})
 					.setParallelism(sourceParallelism)
 					.uid(new UUID(0, 4).toString())
-					.returns(TypeInformation.of(new TypeHint<BidEvent0>() {}))
+					.returns(TypeInformation.of(new TypeHint<BidEvent0>() {
+					}))
 			;
 
 		}
@@ -181,7 +249,7 @@ public class NexmarkQuery5 {
 						return e.auctionId;
 					}
 				})
-				.process(new Aggregator(Time.seconds(windowDuration)))
+				.process(new NexmarkQuery5.Aggregator(Time.seconds(windowDuration)))
 //				.window(TumblingEventTimeWindows.of(Time.seconds(windowDuration)))
 //				.window(SlidingEventTimeWindows.of(Time.seconds(windowDuration), Time.seconds(windowSlide)))
 //				.aggregate(new NexmarkQuery4Aggregator())
@@ -190,7 +258,7 @@ public class NexmarkQuery5 {
 				.name("Nexmark4Aggregator")
 				.uid(new UUID(0, 5).toString())
 				.setParallelism(windowParallelism)
-				.addSink(new NexmarkQuery4LatencyTrackingSink("q5"))
+				.addSink(new NexmarkQuery5.NexmarkQuery4LatencyTrackingSink("q5"))
 				.name("Nexmark4Sink")
 				.setParallelism(sinkParallelism)
 				.uid(new UUID(0, 6).toString());
@@ -198,12 +266,12 @@ public class NexmarkQuery5 {
 	}
 
 
-	static class Aggregator extends KeyedProcessFunction<Long, BidEvent0, NexmarkQuery4Output> implements CheckpointedFunction {
+	static class Aggregator extends KeyedProcessFunction<Long, BidEvent0, NexmarkQuery5.NexmarkQuery4Output> implements CheckpointedFunction {
 
 		private final long windowDuration;
 
-		private transient HashMap<Long, NexmarkQuery4Accumulator> temp;
-		private transient MapState<Long, NexmarkQuery4Accumulator> state;
+		private transient HashMap<Long, NexmarkQuery5.NexmarkQuery4Accumulator> temp;
+		private transient MapState<Long, NexmarkQuery5.NexmarkQuery4Accumulator> state;
 
 		public Aggregator(Time windowDuration) {
 			this.windowDuration = windowDuration.toMilliseconds();
@@ -212,24 +280,24 @@ public class NexmarkQuery5 {
 		@Override
 		public void snapshotState(FunctionSnapshotContext context) throws Exception {
 			state.clear();
-			for (Map.Entry<Long, NexmarkQuery4Accumulator> e : temp.entrySet()) {
+			for (Map.Entry<Long, NexmarkQuery5.NexmarkQuery4Accumulator> e : temp.entrySet()) {
 				state.put(e.getKey(), e.getValue());
 			}
 		}
 
 		@Override
 		public void initializeState(FunctionInitializationContext context) throws Exception {
-			state = context.getKeyedStateStore().getMapState(new MapStateDescriptor<>("state", TypeInformation.of(Long.class), TypeInformation.of(NexmarkQuery4Accumulator.class)));
+			state = context.getKeyedStateStore().getMapState(new MapStateDescriptor<>("state", TypeInformation.of(Long.class), TypeInformation.of(NexmarkQuery5.NexmarkQuery4Accumulator.class)));
 			temp = new HashMap<>(8192);
 		}
 
 		@Override
-		public void processElement(BidEvent0 value, Context ctx, Collector<NexmarkQuery4Output> out) throws Exception {
-			NexmarkQuery4Accumulator old = temp.compute(value.auctionId, new BiFunction<Long, NexmarkQuery4Accumulator, NexmarkQuery4Accumulator>() {
+		public void processElement(BidEvent0 value, Context ctx, Collector<NexmarkQuery5.NexmarkQuery4Output> out) throws Exception {
+			NexmarkQuery5.NexmarkQuery4Accumulator old = temp.compute(value.auctionId, new BiFunction<Long, NexmarkQuery5.NexmarkQuery4Accumulator, NexmarkQuery5.NexmarkQuery4Accumulator>() {
 				@Override
-				public NexmarkQuery4Accumulator apply(Long key, NexmarkQuery4Accumulator acc) {
+				public NexmarkQuery5.NexmarkQuery4Accumulator apply(Long key, NexmarkQuery5.NexmarkQuery4Accumulator acc) {
 					if (acc == null) {
-						acc = new NexmarkQuery4Accumulator(key, value.bid, value.timestamp, value.ingestionTimestamp);
+						acc = new NexmarkQuery5.NexmarkQuery4Accumulator(key, value.bid, value.timestamp, value.ingestionTimestamp);
 					} else {
 						acc.add(value);
 					}
@@ -243,19 +311,19 @@ public class NexmarkQuery5 {
 		}
 
 		@Override
-		public void onTimer(long timestamp, OnTimerContext ctx, Collector<NexmarkQuery4Output> out) throws Exception {
+		public void onTimer(long timestamp, OnTimerContext ctx, Collector<NexmarkQuery5.NexmarkQuery4Output> out) throws Exception {
 			super.onTimer(timestamp, ctx, out);
 
 			out.collect(temp.remove(ctx.getCurrentKey()).toOutput());
 		}
 	}
 
-	public static final class NexmarkQuery4LatencyTrackingSink extends RichSinkFunction<NexmarkQuery4Output> implements Gauge<Double> {
+	public static final class NexmarkQuery4LatencyTrackingSink extends RichSinkFunction<NexmarkQuery5.NexmarkQuery4Output> implements Gauge<Double> {
 
 		private static final long LATENCY_THRESHOLD = 10L * 60L * 1000L;
 
 		private transient SummaryStatistics sinkLatencyBid;
-//		private transient SummaryStatistics sinkLatencyWindow;
+		//		private transient SummaryStatistics sinkLatencyWindow;
 		private transient SummaryStatistics sinkLatencyFlightTime;
 
 		private transient BufferedWriter writer;
@@ -276,7 +344,7 @@ public class NexmarkQuery5 {
 
 		private transient AtomicInteger latency;
 
-		public NexmarkQuery4LatencyTrackingSink(String name){
+		public NexmarkQuery4LatencyTrackingSink(String name) {
 			this.name = name;
 		}
 
@@ -381,7 +449,7 @@ public class NexmarkQuery5 {
 		}
 
 		@Override
-		public void invoke(NexmarkQuery4Output record, Context context) throws Exception {
+		public void invoke(NexmarkQuery5.NexmarkQuery4Output record, Context context) throws Exception {
 			long timeMillis = context.currentProcessingTime();
 			long latency = timeMillis - record.lastTimestamp;
 			if (latency <= LATENCY_THRESHOLD) {
@@ -399,32 +467,32 @@ public class NexmarkQuery5 {
 		}
 	}
 
-	private static class NexmarkQuery4Aggregator implements AggregateFunction<BidEvent0, NexmarkQuery4Accumulator, NexmarkQuery4Output> {
+	private static class NexmarkQuery4Aggregator implements AggregateFunction<BidEvent0, NexmarkQuery5.NexmarkQuery4Accumulator, NexmarkQuery5.NexmarkQuery4Output> {
 		@Override
-		public NexmarkQuery4Accumulator createAccumulator() {
-			return new NexmarkQuery4Accumulator(-1, Double.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE);
+		public NexmarkQuery5.NexmarkQuery4Accumulator createAccumulator() {
+			return new NexmarkQuery5.NexmarkQuery4Accumulator(-1, Double.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE);
 		}
 
 		@Override
-		public NexmarkQuery4Accumulator add(BidEvent0 e, NexmarkQuery4Accumulator acc) {
+		public NexmarkQuery5.NexmarkQuery4Accumulator add(BidEvent0 e, NexmarkQuery5.NexmarkQuery4Accumulator acc) {
 			return acc.add(e);
 		}
 
 		@Override
-		public NexmarkQuery4Output getResult(NexmarkQuery4Accumulator acc) {
+		public NexmarkQuery5.NexmarkQuery4Output getResult(NexmarkQuery5.NexmarkQuery4Accumulator acc) {
 			return acc.toOutput();
 		}
 
 		@Override
-		public NexmarkQuery4Accumulator merge(NexmarkQuery4Accumulator left, NexmarkQuery4Accumulator right) {
+		public NexmarkQuery5.NexmarkQuery4Accumulator merge(NexmarkQuery5.NexmarkQuery4Accumulator left, NexmarkQuery5.NexmarkQuery4Accumulator right) {
 			return left.merge(right);
 		}
 	}
 
-	public static class NexmarkQuery4AccumulatorSerializer extends com.esotericsoftware.kryo.Serializer<NexmarkQuery4Accumulator> {
+	public static class NexmarkQuery4AccumulatorSerializer extends com.esotericsoftware.kryo.Serializer<NexmarkQuery5.NexmarkQuery4Accumulator> {
 
 		@Override
-		public void write(Kryo kryo, Output output, NexmarkQuery4Accumulator a) {
+		public void write(Kryo kryo, Output output, NexmarkQuery5.NexmarkQuery4Accumulator a) {
 			output.writeLong(a.auction);
 			output.writeDouble(a.maxPrice);
 			output.writeLong(a.lastTimestamp);
@@ -432,66 +500,67 @@ public class NexmarkQuery5 {
 		}
 
 		@Override
-		public NexmarkQuery4Accumulator read(Kryo kryo, Input input, Class<NexmarkQuery4Accumulator> clz) {
+		public NexmarkQuery5.NexmarkQuery4Accumulator read(Kryo kryo, Input input, Class<NexmarkQuery5.NexmarkQuery4Accumulator> clz) {
 			long id = input.readLong();
 			double maxPrice = input.readDouble();
 			long ts = input.readLong();
 			long lastTs = input.readLong();
-			return new NexmarkQuery4Accumulator(id, maxPrice, ts, lastTs);
+			return new NexmarkQuery5.NexmarkQuery4Accumulator(id, maxPrice, ts, lastTs);
 		}
 	}
 
-	public static class NexmarkQuery4Accumulator implements Serializable {
+//	public static class NexmarkQuery4Accumulator implements Serializable {
+//
+//		public long auction = -1;
+//		public long lastIngestionTimestamp = 0;
+//		public long lastTimestamp = 0;
+//		public double maxPrice = 0;
+//		public long count = 1;
+//
+//		public NexmarkQuery4Accumulator(long id, double maxPrice, long ts, long lastTs) {
+//			this.auction = id;
+//			this.maxPrice = maxPrice;
+//			this.lastTimestamp = ts;
+//			this.lastIngestionTimestamp = lastTs;
+//
+//		}
+//
+//		public NexmarkQuery5.NexmarkQuery4Accumulator add(BidEvent0 e) {
+//			maxPrice = Math.max(maxPrice, e.bid);
+//			auction = e.auctionId;
+////			lastIngestionTimestamp = e.ingestionTimestamp;
+////			lastTimestamp = e.timestamp;
+//			if (lastTimestamp < e.timestamp) {
+//				lastTimestamp = e.timestamp;
+//				lastIngestionTimestamp = e.ingestionTimestamp;
+//			}
+//			count++;
+//			return this;
+//		}
+//
+//		public NexmarkQuery5.NexmarkQuery4Output toOutput() {
+//			return new NexmarkQuery5.NexmarkQuery4Output(lastTimestamp, lastIngestionTimestamp);
+//		}
+//
+//		public NexmarkQuery5.NexmarkQuery4Accumulator merge(NexmarkQuery5.NexmarkQuery4Accumulator that) {
+//			maxPrice = Math.max(maxPrice, that.maxPrice);
+//			lastTimestamp = Math.max(lastTimestamp, that.lastTimestamp);
+//			lastIngestionTimestamp = Math.max(lastIngestionTimestamp, that.lastIngestionTimestamp);
+//			return this;
+//		}
+//	}
+//
+//	private static class NexmarkQuery4Output implements Serializable {
+//
+//		public long lastIngestionTimestamp = 0;
+//		public long lastTimestamp = 0;
+//		public long windowTriggeringTimestamp = 0;
+//
+//		public NexmarkQuery4Output(long timestamp, long ingestionTimestamp) {
+//			this.lastIngestionTimestamp = timestamp;
+//			this.lastTimestamp = ingestionTimestamp;
+//			this.windowTriggeringTimestamp = System.currentTimeMillis();
+//		}
+//	}
 
-		public long auction = -1;
-		public long lastIngestionTimestamp = 0;
-		public long lastTimestamp = 0;
-		public double maxPrice = 0;
-		public long count = 1;
-
-		public NexmarkQuery4Accumulator(long id, double maxPrice, long ts, long lastTs) {
-			this.auction = id;
-			this.maxPrice = maxPrice;
-			this.lastTimestamp = ts;
-			this.lastIngestionTimestamp = lastTs;
-
-		}
-
-		public NexmarkQuery4Accumulator add(BidEvent0 e) {
-			maxPrice = Math.max(maxPrice, e.bid);
-			auction = e.auctionId;
-//			lastIngestionTimestamp = e.ingestionTimestamp;
-//			lastTimestamp = e.timestamp;
-			if (lastTimestamp < e.timestamp) {
-				lastTimestamp = e.timestamp;
-				lastIngestionTimestamp = e.ingestionTimestamp;
-			}
-			count++;
-			return this;
-		}
-
-		public NexmarkQuery4Output toOutput() {
-			return new NexmarkQuery4Output(lastTimestamp, lastIngestionTimestamp);
-		}
-
-		public NexmarkQuery4Accumulator merge(NexmarkQuery4Accumulator that) {
-			maxPrice = Math.max(maxPrice, that.maxPrice);
-			lastTimestamp = Math.max(lastTimestamp, that.lastTimestamp);
-			lastIngestionTimestamp = Math.max(lastIngestionTimestamp, that.lastIngestionTimestamp);
-			return this;
-		}
-	}
-
-	static class NexmarkQuery4Output implements Serializable {
-
-		public long lastIngestionTimestamp = 0;
-		public long lastTimestamp = 0;
-		public long windowTriggeringTimestamp = 0;
-
-		public NexmarkQuery4Output(long timestamp, long ingestionTimestamp) {
-			this.lastIngestionTimestamp = timestamp;
-			this.lastTimestamp = ingestionTimestamp;
-			this.windowTriggeringTimestamp = System.currentTimeMillis();
-		}
-	}
 }

@@ -10,7 +10,7 @@ import java.nio.ByteBuffer;
 
 public class PersonDeserializationSchema implements KeyedDeserializationSchema<NewPersonEvent0[]> {
 
-		private static final int PERSON_RECORD_SIZE = 206;
+		public static final int PERSON_RECORD_SIZE = 206;
 
 		private static final TypeInformation<NewPersonEvent0[]> FLINK_INTERNAL_TYPE = TypeInformation.of(new TypeHint<NewPersonEvent0[]>() {});
 

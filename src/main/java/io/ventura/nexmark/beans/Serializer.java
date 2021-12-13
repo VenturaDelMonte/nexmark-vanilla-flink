@@ -3,6 +3,7 @@ package io.ventura.nexmark.beans;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
+import io.ventura.nexmark.cm.CmRecord;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.core.memory.DataInputDeserializer;
@@ -124,6 +125,43 @@ public class Serializer {
 			long ingestionTimestamp = input.readLong();
 
 			return new NexmarkEvent.PersonEvent(timestamp, personId, name, email, city, country, province, zipcode, homepage, creditcard, ingestionTimestamp);
+		}
+	}
+
+	public static class CmSerializer  extends com.esotericsoftware.kryo.Serializer<CmRecord> {
+
+		@Override
+		public void write(Kryo kryo, Output output, CmRecord event) {
+			output.writeLong(event.timestamp);
+			output.writeLong(event.jobId);
+			output.writeFloat(event.cpu);
+			output.writeInt(event.eventType);
+			output.writeInt(event.category);
+			output.writeInt(event.userId);
+			output.writeInt(event.constraints);
+			output.writeFloat(event.disk);
+			output.writeLong(event.machineId);
+			output.writeFloat(event.ram);
+			output.writeInt(event.priority);
+			output.writeLong(event.taskId);
+		}
+
+		@Override
+		public CmRecord read(Kryo kryo, Input input, Class<CmRecord> aClass) {
+			CmRecord r = new CmRecord();
+			r.timestamp = input.readLong();
+			r.jobId = input.readLong();
+			r.cpu = input.readFloat();
+			r.eventType = input.readInt();
+			r.category = input.readInt();
+			r.userId = input.readInt();
+			r.constraints = input.readInt();
+			r.disk = input.readFloat();
+			r.machineId = input.readLong();
+			r.ram = input.readFloat();
+			r.priority = input.readInt();
+			r.taskId = input.readLong();
+			return r;
 		}
 	}
 
